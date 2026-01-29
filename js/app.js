@@ -10,10 +10,6 @@ const fileInput = el("fileInput");
 const downloadBtn = el("downloadBtn");
 const toggleSidebarBtn = el("toggleSidebar");
 
-const prevPageBtn = el("prevPage");
-const nextPageBtn = el("nextPage");
-const pageNumberInput = el("pageNumber");
-const pageCountLabel = el("pageCount");
 const zoomOutBtn = el("zoomOut");
 const zoomInBtn = el("zoomIn");
 const rotateBtn = el("rotate");
@@ -23,6 +19,13 @@ const fitPageBtn = el("fitPage");
 const fullscreenBtn = el("fullscreenBtn");
 const autoFullscreen = el("autoFullscreen");
 
+const searchToggle = el("searchToggle");
+const searchPanel = el("searchPanel");
+const searchClose = el("searchClose");
+const searchInput = el("searchInput");
+const searchPrevBtn = el("searchPrev");
+const searchNextBtn = el("searchNext");
+
 const viewFilter = el("viewFilter");
 const filterStrength = el("filterStrength");
 const filterPct = el("filterPct");
@@ -31,11 +34,9 @@ const paletteEl = el("palette");
 const highlightColor = el("highlightColor");
 const hlSwatch = el("hlSwatch");
 
-const searchInput = el("searchInput");
-const searchPrevBtn = el("searchPrev");
-const searchNextBtn = el("searchNext");
-
 const status = el("status");
+const pageIndicator = el("pageIndicator");
+
 const sidebar = el("sidebar");
 const thumbsEl = el("thumbs");
 const outlineEl = el("outline");
@@ -60,7 +61,14 @@ let currentBlobUrl = null;
 let currentDocHash = null;
 let currentFileMeta = null;
 
-const KEY_PREFS = "scribeview:prefs:v2";
+const KEY_PREFS = "scribeview:prefs:v3";
+
+const PALETTE = [
+  "#ffe066", "#ffd43b", "#ff922b", "#ff6b6b",
+  "#f06595", "#cc5de8", "#845ef7", "#5c7cfa",
+  "#339af0", "#22b8cf", "#20c997", "#51cf66",
+  "#94d82d", "#adb5bd"
+];
 
 function setStatus(msg) { status.textContent = msg; }
 
@@ -73,62 +81,36 @@ function savePrefs(p) {
 }
 
 const prefs = loadPrefs();
-
 autoFullscreen.checked = !!prefs.autoFullscreen;
 viewFilter.value = prefs.viewFilter || "none";
 filterStrength.value = String(prefs.filterStrength ?? 120);
 filterPct.textContent = `${filterStrength.value}%`;
-
 highlightColor.value = prefs.highlightColor || "#ffe066";
 hlSwatch.style.background = highlightColor.value;
-
-const PALETTE = [
-  "#ffe066", "#ffd43b", "#ff922b", "#ff6b6b",
-  "#f06595", "#cc5de8", "#845ef7", "#5c7cfa",
-  "#339af0", "#22b8cf", "#20c997", "#51cf66",
-  "#94d82d", "#adb5bd"
-];
-
-function setEnabled(enabled) {
-  [
-    prevPageBtn, nextPageBtn, pageNumberInput,
-    zoomOutBtn, zoomInBtn, rotateBtn, fitWidthBtn, fitPageBtn,
-    downloadBtn, searchInput, searchPrevBtn, searchNextBtn,
-    clearNotesBtn, fullscreenBtn,
-    viewFilter, filterStrength, highlightColor
-  ].forEach(b => b.disabled = !enabled);
-
-  // paleta
-  paletteEl.querySelectorAll("button").forEach(b => b.disabled = !enabled);
-}
-
-function updateNav() {
-  const s = viewer.state;
-  prevPageBtn.disabled = !(s.pdfDoc && s.currentPage > 1);
-  nextPageBtn.disabled = !(s.pdfDoc && s.currentPage < s.totalPages);
-  pageNumberInput.value = s.currentPage;
-  pageNumberInput.min = 1;
-  pageNumberInput.max = s.totalPages || 1;
-  pageCountLabel.textContent = `/ ${s.totalPages || 0}`;
-}
 
 function showViewer() {
   dropZone.classList.add("hidden");
   viewerWrap.classList.remove("hidden");
 }
-
 function showDrop() {
   viewerWrap.classList.add("hidden");
   dropZone.classList.remove("hidden");
 }
 
-function formatDate(ts) {
-  const d = new Date(ts);
-  return d.toLocaleString();
+function setEnabled(enabled) {
+  [
+    downloadBtn, fullscreenBtn, searchToggle,
+    zoomOutBtn, zoomInBtn, rotateBtn, fitWidthBtn, fitPageBtn,
+    viewFilter, filterStrength, highlightColor,
+    clearNotesBtn, searchInput, searchPrevBtn, searchNextBtn
+  ].forEach(b => b.disabled = !enabled);
+
+  paletteEl.querySelectorAll("button").forEach(b => b.disabled = !enabled);
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, m => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[m]));
+function updateFooter() {
+  const s = viewer.state;
+  pageIndicator.textContent = `Página ${s.currentPage || 0} / ${s.totalPages || 0}`;
 }
 
 /* ===================== Paleta ===================== */
@@ -149,60 +131,41 @@ function buildPalette() {
   }
   setActivePalette(highlightColor.value);
 }
-
 function setActivePalette(color) {
   paletteEl.querySelectorAll(".sw").forEach(sw => sw.classList.remove("active"));
   const match = [...paletteEl.querySelectorAll(".sw")].find(sw => sw.title.toLowerCase() === color.toLowerCase());
   match?.classList.add("active");
 }
-
 function applyHighlightColorUI() {
   hlSwatch.style.background = highlightColor.value;
   prefs.highlightColor = highlightColor.value;
   savePrefs(prefs);
   setActivePalette(highlightColor.value);
 }
-
-highlightColor.addEventListener("input", () => {
-  applyHighlightColorUI();
-});
+highlightColor.addEventListener("input", applyHighlightColorUI);
 buildPalette();
 applyHighlightColorUI();
 
-/* ===================== Filtros (más intensos) ===================== */
+/* ===================== Filtros intensos ===================== */
 function applyFilter() {
   const mode = viewFilter.value;
-
-  // strength: 0..200% -> 0..2.0
-  const s = Math.max(0, Math.min(2, Number(filterStrength.value || "0") / 100));
+  const s = Math.max(0, Math.min(2, Number(filterStrength.value || "0") / 100)); // 0..2
   filterPct.textContent = `${filterStrength.value}%`;
 
-  // Filtros más “pro”: añadimos contraste y saturación controlados
   let f = "none";
-
   if (mode === "sepia") {
-    // sepia fuerte + calidez
     f = `sepia(${Math.min(1, s)}) saturate(${1 + s * 0.7}) contrast(${1.05 + s * 0.10})`;
-    pageLayer.style.background = "rgba(210, 190, 140, 0.12)";
   } else if (mode === "grayscale") {
     f = `grayscale(${Math.min(1, s)}) contrast(${1.05 + s * 0.12})`;
-    pageLayer.style.background = "rgba(0,0,0,.05)";
   } else if (mode === "invert") {
-    // invert parcial o fuerte + hue-rotate suaviza
     f = `invert(${Math.min(1, s)}) hue-rotate(180deg) contrast(${1.05 + s * 0.10})`;
-    pageLayer.style.background = "rgba(0,0,0,.05)";
-  } else {
-    pageLayer.style.background = "rgba(0,0,0,.05)";
   }
-
-  // Aplicar SOLO al canvas para mantener texto nítido
   canvas.style.filter = f;
 
   prefs.viewFilter = mode;
   prefs.filterStrength = Number(filterStrength.value || "0");
   savePrefs(prefs);
 }
-
 viewFilter.addEventListener("change", applyFilter);
 filterStrength.addEventListener("input", applyFilter);
 
@@ -210,23 +173,31 @@ filterStrength.addEventListener("input", applyFilter);
 async function toggleFullscreen() {
   const target = document.documentElement;
   try {
-    if (!document.fullscreenElement) {
-      await target.requestFullscreen?.();
-      setStatus("Pantalla completa activada");
-    } else {
-      await document.exitFullscreen?.();
-      setStatus("Pantalla completa desactivada");
-    }
+    if (!document.fullscreenElement) await target.requestFullscreen?.();
+    else await document.exitFullscreen?.();
   } catch {
-    setStatus("Pantalla completa no disponible en este navegador.");
+    setStatus("Pantalla completa no disponible.");
   }
 }
-
 fullscreenBtn.addEventListener("click", toggleFullscreen);
 autoFullscreen.addEventListener("change", () => {
   prefs.autoFullscreen = autoFullscreen.checked;
   savePrefs(prefs);
 });
+
+/* ===================== Búsqueda: lupa ===================== */
+function openSearchPanel() {
+  searchPanel.classList.remove("hidden");
+  setTimeout(() => searchInput.focus(), 0);
+}
+function closeSearchPanel() {
+  searchPanel.classList.add("hidden");
+}
+searchToggle.addEventListener("click", () => {
+  if (searchPanel.classList.contains("hidden")) openSearchPanel();
+  else closeSearchPanel();
+});
+searchClose.addEventListener("click", closeSearchPanel);
 
 /* ===================== Viewer ===================== */
 const viewer = createPdfViewer({
@@ -235,8 +206,8 @@ const viewer = createPdfViewer({
   thumbsEl,
   outlineEl,
   viewerWrapEl: viewerWrap,
-  onThumbClick: async (page) => goToPage(page),
-  onOutlineClick: async (page) => goToPage(page),
+  onThumbClick: async (page) => goToPage(page, page > viewer.state.currentPage ? "next" : "prev"),
+  onOutlineClick: async (page) => goToPage(page, page > viewer.state.currentPage ? "next" : "prev"),
   onStatus: setStatus
 });
 
@@ -257,7 +228,7 @@ const search = createSearchController({
     await viewer.renderPage(p);
     viewer.setActiveThumb(p);
     highlights.renderHighlights(p);
-    updateNav();
+    updateFooter();
   },
   getCurrentPage: () => viewer.state.currentPage,
   getTotalPages: () => viewer.state.totalPages,
@@ -265,32 +236,43 @@ const search = createSearchController({
   onStatus: setStatus
 });
 
-async function goToPage(page) {
-  await viewer.renderPage(page);
+/* Animación tipo hoja */
+function animateFlip(dir) {
+  pageLayer.classList.remove("flipNext", "flipPrev");
+  const cls = dir === "prev" ? "flipPrev" : "flipNext";
+  pageLayer.classList.add(cls);
+  setTimeout(() => pageLayer.classList.remove(cls), 280);
+}
+
+async function goToPage(page, dir = "next") {
+  if (!viewer.state.pdfDoc) return;
+  const target = Math.min(Math.max(1, page), viewer.state.totalPages);
+  if (target === viewer.state.currentPage) return;
+
+  animateFlip(dir);
+  await viewer.renderPage(target);
   viewer.setActiveThumb(viewer.state.currentPage);
   highlights.renderHighlights(viewer.state.currentPage);
   await search.markOnCurrentPage();
-  updateNav();
+  updateFooter();
 }
 
+/* ===================== Recientes / Notes ===================== */
+function formatDate(ts){ return new Date(ts).toLocaleString(); }
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, m => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[m]));
+}
 function renderRecent() {
   const list = loadRecent();
-  if (!list.length) {
-    recentEl.innerHTML = `<div class="muted">Sin recientes.</div>`;
-    return;
-  }
+  if (!list.length) { recentEl.innerHTML = `<div class="muted">Sin recientes.</div>`; return; }
   recentEl.innerHTML = "";
   for (const r of list) {
     const div = document.createElement("div");
     div.className = "recentItem";
     div.innerHTML = `
-      <div class="noteTop">
-        <div><b>${escapeHtml(r.name || "PDF")}</b></div>
-        <div class="noteMeta">${new Date(r.lastOpened).toLocaleDateString()}</div>
-      </div>
-      <div class="noteMeta">hash: ${r.hash.slice(0, 10)}… • ${(r.size/1024/1024).toFixed(2)} MB</div>
-      <div class="noteMeta">Último: ${formatDate(r.lastOpened)}</div>
-      <div class="noteMeta">*Para reabrir debes seleccionar el archivo otra vez*</div>
+      <div><b>${escapeHtml(r.name || "PDF")}</b></div>
+      <div class="muted">hash: ${r.hash.slice(0,10)}… • ${(r.size/1024/1024).toFixed(2)} MB</div>
+      <div class="muted">Último: ${formatDate(r.lastOpened)}</div>
     `;
     recentEl.appendChild(div);
   }
@@ -300,78 +282,27 @@ async function goToHighlight(id) {
   const list = highlights.getAll();
   const h = list.find(x => x.id === id);
   if (!h) return;
-
-  await goToPage(h.page);
-
-  const rectEl = highlightLayerEl.querySelector(`.hl[data-hid="${id}"]`);
-  rectEl?.scrollIntoView({ block: "center", inline: "nearest" });
-
-  pageLayer?.classList.add("flash");
-  setTimeout(() => pageLayer?.classList.remove("flash"), 1200);
+  await goToPage(h.page, h.page > viewer.state.currentPage ? "next" : "prev");
+  highlightLayerEl.querySelector(`.hl[data-hid="${id}"]`)?.scrollIntoView({ block:"center" });
 }
 
 function renderNotes(list) {
-  if (!currentDocHash) {
-    notesEl.innerHTML = `<div class="muted">Abre un PDF para ver anotaciones.</div>`;
-    return;
-  }
-  if (!list.length) {
-    notesEl.innerHTML = `<div class="muted">Aún no hay highlights. Selecciona texto y doble click.</div>`;
-    return;
-  }
+  if (!currentDocHash) { notesEl.innerHTML = `<div class="muted">Abre un PDF para ver anotaciones.</div>`; return; }
+  if (!list.length) { notesEl.innerHTML = `<div class="muted">Aún no hay highlights. Selecciona texto y doble click.</div>`; return; }
 
   notesEl.innerHTML = "";
   for (const h of list) {
     const div = document.createElement("div");
     div.className = "noteItem";
-    div.dataset.hid = h.id;
-
-    const colorDot = h.color || "#ffe066";
-
     div.innerHTML = `
-      <div class="noteTop">
-        <div><b>Pág. ${h.page}</b></div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span class="noteMeta">${new Date(h.createdAt).toLocaleTimeString()}</span>
-          <span title="Color" style="display:inline-block;width:12px;height:12px;border-radius:4px;background:${colorDot};border:1px solid rgba(127,127,127,.4)"></span>
-        </div>
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;">
+        <b>Pág. ${h.page}</b>
+        <span style="width:12px;height:12px;border-radius:4px;background:${h.color || "#ffe066"};border:1px solid rgba(127,127,127,.4)"></span>
       </div>
-      <div class="noteText">${escapeHtml(h.text).slice(0, 170)}</div>
-      <div class="noteMeta">${formatDate(h.createdAt)}</div>
-
-      <div class="noteActions">
-        <div class="notePalette" aria-label="Cambiar color">
-          ${PALETTE.slice(0, 10).map(c => `
-            <button class="sw" type="button" data-color="${c}" title="${c}" style="background:${c}"></button>
-          `).join("")}
-        </div>
-        <button class="noteBtn" type="button" data-del="1" title="Borrar highlight">🗑 Borrar</button>
-      </div>
+      <div style="margin-top:6px;font-size:13px;">${escapeHtml(h.text).slice(0,170)}</div>
+      <div class="muted" style="margin-top:6px;">${formatDate(h.createdAt)}</div>
     `;
-
-    // Click en el contenedor: ir al highlight
-    div.addEventListener("click", async () => {
-      await goToHighlight(h.id);
-    });
-
-    // Cambiar color (evita que el click “suba” al contenedor)
-    div.querySelectorAll('button.sw[data-color]').forEach(btn => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const c = btn.dataset.color;
-        highlights.updateHighlightColor(h.id, c);
-        // re-render actual page + notes (onChange ya lo hace)
-        highlights.renderHighlights(viewer.state.currentPage);
-      });
-    });
-
-    // Borrar individual
-    div.querySelector('button[data-del="1"]').addEventListener("click", (e) => {
-      e.stopPropagation();
-      highlights.deleteHighlight(h.id);
-      highlights.renderHighlights(viewer.state.currentPage);
-    });
-
+    div.addEventListener("click", () => goToHighlight(h.id));
     notesEl.appendChild(div);
   }
 }
@@ -379,10 +310,7 @@ function renderNotes(list) {
 /* ===================== Abrir PDF ===================== */
 async function openPdfFile(file) {
   if (!file) return;
-  if (file.type !== "application/pdf") {
-    setStatus("Ese archivo no es un PDF.");
-    return;
-  }
+  if (file.type !== "application/pdf") { setStatus("Ese archivo no es un PDF."); return; }
 
   if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
   currentBlobUrl = URL.createObjectURL(file);
@@ -393,12 +321,7 @@ async function openPdfFile(file) {
   currentDocHash = await sha256Hex(arrayBuffer);
   currentFileMeta = { name: file.name, size: file.size };
 
-  addRecent({
-    name: file.name,
-    size: file.size,
-    hash: currentDocHash,
-    lastOpened: Date.now()
-  });
+  addRecent({ name:file.name, size:file.size, hash:currentDocHash, lastOpened:Date.now() });
   renderRecent();
 
   const { totalPages } = await viewer.loadFromArrayBuffer(arrayBuffer);
@@ -408,26 +331,23 @@ async function openPdfFile(file) {
   showViewer();
   setEnabled(true);
 
-  await goToPage(1);
+  await viewer.renderPage(1);
   await viewer.buildThumbnails();
   await viewer.buildOutline();
 
+  highlights.renderHighlights(1);
   await search.clear();
-  searchInput.value = "";
 
   downloadBtn.disabled = false;
   clearNotesBtn.disabled = !highlights.getAll().length;
 
-  // aplicar preferencias
   applyFilter();
   applyHighlightColorUI();
 
-  setStatus(`Listo • ${totalPages} páginas • hash ${currentDocHash.slice(0, 10)}…`);
+  updateFooter();
+  setStatus(`Listo • ${totalPages} páginas`);
 
-  if (autoFullscreen.checked) {
-    // en algunos móviles puede exigir interacción: si falla, usa botón ⛶
-    await toggleFullscreen();
-  }
+  if (autoFullscreen.checked) await toggleFullscreen();
 }
 
 fileInput.addEventListener("change", async (e) => {
@@ -446,33 +366,40 @@ downloadBtn.addEventListener("click", () => {
 });
 
 /* ===================== Controles ===================== */
-prevPageBtn.addEventListener("click", async () => goToPage(viewer.state.currentPage - 1));
-nextPageBtn.addEventListener("click", async () => goToPage(viewer.state.currentPage + 1));
-
-pageNumberInput.addEventListener("change", async () => {
-  await goToPage(Number(pageNumberInput.value || "1"));
-});
-
 zoomOutBtn.addEventListener("click", async () => {
   viewer.setScale(viewer.state.scale - 0.2);
-  await goToPage(viewer.state.currentPage);
+  await viewer.renderPage(viewer.state.currentPage);
+  highlights.renderHighlights(viewer.state.currentPage);
+  await search.markOnCurrentPage();
+  updateFooter();
 });
 zoomInBtn.addEventListener("click", async () => {
   viewer.setScale(viewer.state.scale + 0.2);
-  await goToPage(viewer.state.currentPage);
+  await viewer.renderPage(viewer.state.currentPage);
+  highlights.renderHighlights(viewer.state.currentPage);
+  await search.markOnCurrentPage();
+  updateFooter();
 });
 rotateBtn.addEventListener("click", async () => {
   viewer.setRotation(viewer.state.rotation + 90);
-  await goToPage(viewer.state.currentPage);
+  await viewer.renderPage(viewer.state.currentPage);
+  highlights.renderHighlights(viewer.state.currentPage);
+  await search.markOnCurrentPage();
+  updateFooter();
 });
-
 fitWidthBtn.addEventListener("click", async () => {
   await viewer.fitWidth();
-  await goToPage(viewer.state.currentPage);
+  await viewer.renderPage(viewer.state.currentPage);
+  highlights.renderHighlights(viewer.state.currentPage);
+  await search.markOnCurrentPage();
+  updateFooter();
 });
 fitPageBtn.addEventListener("click", async () => {
   await viewer.fitPage();
-  await goToPage(viewer.state.currentPage);
+  await viewer.renderPage(viewer.state.currentPage);
+  highlights.renderHighlights(viewer.state.currentPage);
+  await search.markOnCurrentPage();
+  updateFooter();
 });
 
 /* ===================== Búsqueda ===================== */
@@ -490,15 +417,12 @@ toggleSidebarBtn.addEventListener("click", (e) => {
   e.stopPropagation();
   sidebar.classList.toggle("hidden");
 });
-
 document.addEventListener("click", (e) => {
   const isMobile = window.matchMedia("(max-width: 980px)").matches;
   if (!isMobile) return;
-
-  const clickedInside = sidebar.contains(e.target) || toggleSidebarBtn.contains(e.target);
-  if (!clickedInside && !sidebar.classList.contains("hidden")) sidebar.classList.add("hidden");
+  const inside = sidebar.contains(e.target) || toggleSidebarBtn.contains(e.target);
+  if (!inside && !sidebar.classList.contains("hidden")) sidebar.classList.add("hidden");
 });
-
 document.querySelectorAll(".tab").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
@@ -524,120 +448,67 @@ clearRecentBtn.addEventListener("click", () => {
   setStatus("Recientes limpiados");
 });
 
-/* ===================== Drag & drop ===================== */
+/* ===================== Drag & Drop ===================== */
 ["dragenter","dragover"].forEach(evt => {
-  dropZone.addEventListener(evt, (e) => {
-    e.preventDefault();
-    dropZone.classList.add("dragover");
-  });
-});
-["dragleave","drop"].forEach(evt => {
-  dropZone.addEventListener(evt, (e) => {
-    e.preventDefault();
-    dropZone.classList.remove("dragover");
-  });
+  dropZone.addEventListener(evt, (e) => { e.preventDefault(); });
 });
 dropZone.addEventListener("drop", async (e) => {
+  e.preventDefault();
   const file = e.dataTransfer?.files?.[0];
   await openPdfFile(file);
 });
 
 /* ===================== Gestos: swipe + tap ===================== */
-let touchStartX = 0;
-let touchStartY = 0;
-let touchLastX = 0;
-let touchLastY = 0;
-let touchMoved = false;
-
-function selectionEmpty() {
+let sx=0, sy=0, lx=0, ly=0, moved=false;
+function selectionEmpty(){
   const s = window.getSelection();
   return !s || s.isCollapsed || String(s).trim().length === 0;
 }
+function loaded(){ return !!viewer.state.pdfDoc; }
 
-function isPDFLoaded() {
-  return !!viewer.state.pdfDoc;
-}
+pageLayer.addEventListener("touchstart", (e)=>{
+  if(!loaded()) return;
+  const t=e.touches?.[0]; if(!t) return;
+  moved=false; sx=lx=t.clientX; sy=ly=t.clientY;
+},{passive:true});
 
-function withinPageLayer(target) {
-  return pageLayer && (target === pageLayer || pageLayer.contains(target));
-}
+pageLayer.addEventListener("touchmove",(e)=>{
+  if(!loaded()) return;
+  const t=e.touches?.[0]; if(!t) return;
+  lx=t.clientX; ly=t.clientY;
+  if(Math.abs(lx-sx)>12 || Math.abs(ly-sy)>12) moved=true;
+},{passive:true});
 
-pageLayer.addEventListener("touchstart", (e) => {
-  if (!isPDFLoaded()) return;
-  const t = e.touches?.[0];
-  if (!t) return;
-  touchMoved = false;
-  touchStartX = touchLastX = t.clientX;
-  touchStartY = touchLastY = t.clientY;
-}, { passive: true });
+pageLayer.addEventListener("touchend", async ()=>{
+  if(!loaded()) return;
+  if(!selectionEmpty()) return;
 
-pageLayer.addEventListener("touchmove", (e) => {
-  if (!isPDFLoaded()) return;
-  const t = e.touches?.[0];
-  if (!t) return;
-  touchLastX = t.clientX;
-  touchLastY = t.clientY;
-  const dx = touchLastX - touchStartX;
-  const dy = touchLastY - touchStartY;
-  if (Math.abs(dx) > 12 || Math.abs(dy) > 12) touchMoved = true;
-}, { passive: true });
+  const dx=lx-sx, dy=ly-sy;
 
-pageLayer.addEventListener("touchend", async (e) => {
-  if (!isPDFLoaded()) return;
-  if (!selectionEmpty()) return;
-
-  const dx = touchLastX - touchStartX;
-  const dy = touchLastY - touchStartY;
-
-  // Swipe horizontal
-  if (touchMoved && Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.2) {
-    if (dx < 0) await goToPage(viewer.state.currentPage + 1);
-    else await goToPage(viewer.state.currentPage - 1);
+  if(moved && Math.abs(dx)>45 && Math.abs(dx)>Math.abs(dy)*1.2){
+    if(dx<0) await goToPage(viewer.state.currentPage+1, "next");
+    else await goToPage(viewer.state.currentPage-1, "prev");
     return;
   }
 
-  // Tap: borde izq/der
-  const rect = pageLayer.getBoundingClientRect();
-  const x = touchLastX - rect.left;
-  const w = rect.width || 1;
+  const r=pageLayer.getBoundingClientRect();
+  const x=lx-r.left, w=r.width||1;
+  if(x<=w*0.28) await goToPage(viewer.state.currentPage-1, "prev");
+  else if(x>=w*0.72) await goToPage(viewer.state.currentPage+1, "next");
+},{passive:true});
 
-  const leftZone = w * 0.28;
-  const rightZone = w * 0.72;
-
-  if (x <= leftZone) await goToPage(viewer.state.currentPage - 1);
-  else if (x >= rightZone) await goToPage(viewer.state.currentPage + 1);
-}, { passive: true });
-
-// Desktop click (opcional): click en bordes cambia página (solo si no selecciona texto)
-pageLayer.addEventListener("click", async (e) => {
-  if (!isPDFLoaded()) return;
-  if (!withinPageLayer(e.target)) return;
-  if (!selectionEmpty()) return;
-
-  const rect = pageLayer.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const w = rect.width || 1;
-
-  if (x <= w * 0.20) await goToPage(viewer.state.currentPage - 1);
-  else if (x >= w * 0.80) await goToPage(viewer.state.currentPage + 1);
+/* Teclado */
+window.addEventListener("keydown",(e)=>{
+  if(!loaded()) return;
+  if(e.key==="ArrowLeft") goToPage(viewer.state.currentPage-1, "prev");
+  if(e.key==="ArrowRight") goToPage(viewer.state.currentPage+1, "next");
 });
 
-/* ===================== Teclado ===================== */
-window.addEventListener("keydown", async (e) => {
-  if (!isPDFLoaded()) return;
-
-  if (e.key === "ArrowLeft") prevPageBtn.click();
-  if (e.key === "ArrowRight") nextPageBtn.click();
-  if (e.key === "+" || e.key === "=") zoomInBtn.click();
-  if (e.key === "-" || e.key === "_") zoomOutBtn.click();
-  if (e.key.toLowerCase() === "f") fullscreenBtn.click();
-});
-
-/* ===================== Init ===================== */
+/* INIT */
 setEnabled(false);
 showDrop();
 setStatus("Sin PDF cargado");
-
 renderRecent();
 applyFilter();
 applyHighlightColorUI();
+updateFooter();
