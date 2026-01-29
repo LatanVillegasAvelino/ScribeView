@@ -49,10 +49,16 @@ const clearRecentBtn = el("clearRecent");
 const viewerWrap = el("viewerWrap");
 const dropZone = el("dropZone");
 const pageLayer = el("pageLayer");
+const pageFX = el("pageFX");
 
 const canvas = el("pdfCanvas");
 const textLayerEl = el("textLayer");
 const highlightLayerEl = el("highlightLayer");
+
+const hlMenu = el("hlMenu");
+const hlMenuPalette = el("hlMenuPalette");
+const hlMenuApply = el("hlMenuApply");
+const hlMenuCancel = el("hlMenuCancel");
 
 const themeToggle = el("themeToggle");
 initThemeToggle(themeToggle);
@@ -61,7 +67,7 @@ let currentBlobUrl = null;
 let currentDocHash = null;
 let currentFileMeta = null;
 
-const KEY_PREFS = "scribeview:prefs:v3";
+const KEY_PREFS = "scribeview:prefs:v4";
 
 const PALETTE = [
   "#ffe066", "#ffd43b", "#ff922b", "#ff6b6b",
@@ -113,7 +119,7 @@ function updateFooter() {
   pageIndicator.textContent = `Página ${s.currentPage || 0} / ${s.totalPages || 0}`;
 }
 
-/* ===================== Paleta ===================== */
+/* ===================== Paleta (barra) ===================== */
 function buildPalette() {
   paletteEl.innerHTML = "";
   for (const c of PALETTE) {
@@ -149,7 +155,7 @@ applyHighlightColorUI();
 /* ===================== Filtros intensos ===================== */
 function applyFilter() {
   const mode = viewFilter.value;
-  const s = Math.max(0, Math.min(2, Number(filterStrength.value || "0") / 100)); // 0..2
+  const s = Math.max(0, Math.min(2, Number(filterStrength.value || "0") / 100));
   filterPct.textContent = `${filterStrength.value}%`;
 
   let f = "none";
@@ -236,12 +242,27 @@ const search = createSearchController({
   onStatus: setStatus
 });
 
-/* Animación tipo hoja */
-function animateFlip(dir) {
-  pageLayer.classList.remove("flipNext", "flipPrev");
-  const cls = dir === "prev" ? "flipPrev" : "flipNext";
-  pageLayer.classList.add(cls);
-  setTimeout(() => pageLayer.classList.remove(cls), 280);
+/* ===== “Pasar hoja” doble fase + sombra ===== */
+function fxOn() {
+  pageFX.classList.remove("fxOff");
+  pageFX.classList.add("fxOn");
+}
+function fxOff() {
+  pageFX.classList.remove("fxOn");
+  pageFX.classList.add("fxOff");
+}
+
+function flipOut(dir) {
+  pageLayer.classList.remove("flipOutNext","flipInNext","flipOutPrev","flipInPrev");
+  fxOn();
+  pageLayer.classList.add(dir === "prev" ? "flipOutPrev" : "flipOutNext");
+}
+
+function flipIn(dir) {
+  pageLayer.classList.remove("flipOutNext","flipInNext","flipOutPrev","flipInPrev");
+  pageLayer.classList.add(dir === "prev" ? "flipInPrev" : "flipInNext");
+  setTimeout(() => fxOff(), 160);
+  setTimeout(() => pageLayer.classList.remove("flipInNext","flipInPrev"), 220);
 }
 
 async function goToPage(page, dir = "next") {
@@ -249,12 +270,20 @@ async function goToPage(page, dir = "next") {
   const target = Math.min(Math.max(1, page), viewer.state.totalPages);
   if (target === viewer.state.currentPage) return;
 
-  animateFlip(dir);
-  await viewer.renderPage(target);
-  viewer.setActiveThumb(viewer.state.currentPage);
-  highlights.renderHighlights(viewer.state.currentPage);
-  await search.markOnCurrentPage();
-  updateFooter();
+  // fase 1: “sale la hoja”
+  flipOut(dir);
+
+  // render del nuevo page en mitad (cuando está casi “cerrado”)
+  setTimeout(async () => {
+    await viewer.renderPage(target);
+    viewer.setActiveThumb(viewer.state.currentPage);
+    highlights.renderHighlights(viewer.state.currentPage);
+    await search.markOnCurrentPage();
+    updateFooter();
+
+    // fase 2: “entra la hoja”
+    flipIn(dir);
+  }, 160);
 }
 
 /* ===================== Recientes / Notes ===================== */
@@ -288,7 +317,7 @@ async function goToHighlight(id) {
 
 function renderNotes(list) {
   if (!currentDocHash) { notesEl.innerHTML = `<div class="muted">Abre un PDF para ver anotaciones.</div>`; return; }
-  if (!list.length) { notesEl.innerHTML = `<div class="muted">Aún no hay highlights. Selecciona texto y doble click.</div>`; return; }
+  if (!list.length) { notesEl.innerHTML = `<div class="muted">Aún no hay highlights. Selecciona o mantén presionado.</div>`; return; }
 
   notesEl.innerHTML = "";
   for (const h of list) {
@@ -325,7 +354,6 @@ async function openPdfFile(file) {
   renderRecent();
 
   const { totalPages } = await viewer.loadFromArrayBuffer(arrayBuffer);
-
   highlights.setDocHash(currentDocHash);
 
   showViewer();
@@ -458,7 +486,7 @@ dropZone.addEventListener("drop", async (e) => {
   await openPdfFile(file);
 });
 
-/* ===================== Gestos: swipe + tap ===================== */
+/* ===================== Gestos: swipe + tap (pasar página) ===================== */
 let sx=0, sy=0, lx=0, ly=0, moved=false;
 function selectionEmpty(){
   const s = window.getSelection();
@@ -497,11 +525,113 @@ pageLayer.addEventListener("touchend", async ()=>{
   else if(x>=w*0.72) await goToPage(viewer.state.currentPage+1, "next");
 },{passive:true});
 
+/* ===================== Long-press para resaltar (móvil) ===================== */
+let lpTimer = null;
+let lpActive = false;
+let lpChosenColor = highlightColor.value;
+
+function hideHLMenu() {
+  hlMenu.classList.add("hidden");
+  hlMenu.style.transform = "translate(-9999px,-9999px)";
+  lpActive = false;
+}
+
+function buildHLMenuPalette() {
+  hlMenuPalette.innerHTML = "";
+  for (const c of PALETTE) {
+    const b = document.createElement("button");
+    b.className = "sw";
+    b.type = "button";
+    b.title = c;
+    b.style.background = c;
+    if (c.toLowerCase() === lpChosenColor.toLowerCase()) b.classList.add("active");
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      lpChosenColor = c;
+      highlightColor.value = c;
+      applyHighlightColorUI();
+      buildHLMenuPalette();
+    });
+    hlMenuPalette.appendChild(b);
+  }
+}
+
+function showHLMenuAtSelection() {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+  const range = sel.getRangeAt(0);
+  const rect = range.getBoundingClientRect();
+  if (!rect || rect.width === 0) return;
+
+  lpChosenColor = highlightColor.value;
+  buildHLMenuPalette();
+
+  const pad = 8;
+  const x = Math.max(pad, Math.min(window.innerWidth - 260, rect.left + rect.width/2 - 130));
+  const y = Math.max(pad, rect.top - 56);
+
+  hlMenu.classList.remove("hidden");
+  hlMenu.style.transform = `translate(${Math.floor(x)}px, ${Math.floor(y)}px)`;
+  lpActive = true;
+}
+
+function selectionInsideTextLayer() {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return false;
+  const range = sel.getRangeAt(0);
+  return textLayerEl.contains(range.commonAncestorContainer);
+}
+
+pageLayer.addEventListener("touchstart", (e) => {
+  if (!loaded()) return;
+
+  // si el usuario está tocando botones/menú, no activar
+  const target = e.target;
+  if (hlMenu.contains(target)) return;
+
+  clearTimeout(lpTimer);
+  lpTimer = setTimeout(() => {
+    if (!selectionInsideTextLayer()) return;
+    const txt = String(window.getSelection() || "").trim();
+    if (!txt) return;
+    showHLMenuAtSelection();
+  }, 520);
+}, { passive: true });
+
+pageLayer.addEventListener("touchend", () => {
+  clearTimeout(lpTimer);
+}, { passive: true });
+
+document.addEventListener("scroll", () => {
+  if (lpActive) hideHLMenu();
+}, { passive: true });
+
+document.addEventListener("click", (e) => {
+  if (!lpActive) return;
+  if (!hlMenu.contains(e.target)) hideHLMenu();
+});
+
+hlMenuCancel.addEventListener("click", () => {
+  hideHLMenu();
+});
+
+hlMenuApply.addEventListener("click", () => {
+  if (!loaded()) return;
+  const page = viewer.state.currentPage || 1;
+  const ok = highlights.addFromCurrentSelection(page, lpChosenColor);
+  if (ok) {
+    highlights.renderHighlights(page);
+    setStatus("Resaltado guardado");
+  }
+  hideHLMenu();
+});
+
 /* Teclado */
 window.addEventListener("keydown",(e)=>{
   if(!loaded()) return;
   if(e.key==="ArrowLeft") goToPage(viewer.state.currentPage-1, "prev");
   if(e.key==="ArrowRight") goToPage(viewer.state.currentPage+1, "next");
+  if(e.key==="Escape") hideHLMenu();
 });
 
 /* INIT */
@@ -512,3 +642,4 @@ renderRecent();
 applyFilter();
 applyHighlightColorUI();
 updateFooter();
+hideHLMenu();
