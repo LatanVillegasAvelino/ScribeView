@@ -3,11 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#11131a" />
   <title>ScribeView</title>
   <link rel="stylesheet" href="assets/styles.css" />
 </head>
 
 <body>
+  <!-- TOPBAR (sin bloque morado) -->
   <header class="topbar">
     <div class="left">
       <button id="toggleSidebar" class="btn" title="Menú">☰</button>
@@ -18,50 +20,41 @@
       </label>
 
       <button id="downloadBtn" class="btn" disabled title="Descargar PDF">⬇</button>
-
-      <div class="divider"></div>
-
       <button id="fullscreenBtn" class="btn" disabled title="Pantalla completa">⛶</button>
 
-      <label class="switch" title="Entrar a pantalla completa al abrir PDF">
+      <label class="switch" title="Pantalla completa automática al abrir">
         <input id="autoFullscreen" type="checkbox" />
         <span>Auto</span>
       </label>
     </div>
 
-    <div class="center">
-      <button id="prevPage" class="btn" disabled title="Anterior">◀</button>
-
-      <div class="pageBox">
-        <input id="pageNumber" type="number" min="1" value="1" />
-        <span id="pageCount">/ 0</span>
-      </div>
-
-      <button id="nextPage" class="btn" disabled title="Siguiente">▶</button>
-
-      <div class="divider"></div>
-
-      <button id="zoomOut" class="btn" disabled title="Zoom -">−</button>
-      <button id="zoomIn" class="btn" disabled title="Zoom +">＋</button>
-      <button id="rotate" class="btn" disabled title="Rotar">⟳</button>
-
-      <div class="divider"></div>
-
-      <button id="fitWidth" class="btn" disabled title="Ajustar al ancho">↔</button>
-      <button id="fitPage" class="btn" disabled title="Ajustar a página">▢</button>
-    </div>
-
+    <!-- ZONA AMARILLA: herramientas a la derecha -->
     <div class="right">
-      <div class="search">
-        <input id="searchInput" type="search" placeholder="Buscar en el PDF…" disabled />
-        <button id="searchPrev" class="btn" disabled title="Anterior">↑</button>
-        <button id="searchNext" class="btn" disabled title="Siguiente">↓</button>
-        <span id="searchCount" class="muted">0</span>
+      <div class="tools" aria-label="Herramientas">
+        <button id="zoomOut" class="btn" disabled title="Zoom -">−</button>
+        <button id="zoomIn" class="btn" disabled title="Zoom +">＋</button>
+        <button id="rotate" class="btn" disabled title="Rotar">⟳</button>
+        <button id="fitWidth" class="btn" disabled title="Ajustar al ancho">↔</button>
+        <button id="fitPage" class="btn" disabled title="Ajustar a página">▢</button>
       </div>
+
+      <!-- Lupa (abre/cierra panel de búsqueda) -->
+      <button id="searchToggle" class="btn" disabled title="Buscar">🔍</button>
 
       <button id="themeToggle" class="btn" title="Modo oscuro">🌙</button>
     </div>
   </header>
+
+  <!-- Panel desplegable de búsqueda (se abre con lupa) -->
+  <div id="searchPanel" class="searchPanel hidden">
+    <div class="searchRow">
+      <input id="searchInput" type="search" placeholder="Buscar en el PDF…" disabled />
+      <button id="searchPrev" class="btn" disabled title="Anterior">↑</button>
+      <button id="searchNext" class="btn" disabled title="Siguiente">↓</button>
+      <span id="searchCount" class="muted">0</span>
+      <button id="searchClose" class="btn" title="Cerrar">✕</button>
+    </div>
+  </div>
 
   <!-- Subbar: filtros + paleta -->
   <div class="subbar">
@@ -81,11 +74,7 @@
 
     <div class="subgroup">
       <span class="subLabel">Resaltado:</span>
-
-      <div id="palette" class="palette" aria-label="Paleta de colores">
-        <!-- botones creados por JS -->
-      </div>
-
+      <div id="palette" class="palette"></div>
       <input id="highlightColor" type="color" value="#ffe066" disabled />
       <span id="hlSwatch" class="hlSwatch" title="Color actual"></span>
     </div>
@@ -138,16 +127,15 @@
           <div id="textLayer" class="textLayer"></div>
           <div id="highlightLayer" class="highlightLayer"></div>
 
-          <!-- Hint de gestos -->
           <div class="gestureHint muted">
-            Desliza ← / → para cambiar página • Toca borde izq/der
+            Desliza ← / → • Toca borde izq/der
           </div>
         </div>
       </div>
 
       <footer class="bottombar">
         <span id="status" class="muted">Sin PDF cargado</span>
-        <span class="hint muted">Tip: selecciona texto y doble click para resaltar • ⛶ pantalla completa</span>
+        <span id="pageIndicator" class="muted">Página 0 / 0</span>
       </footer>
     </section>
   </main>
