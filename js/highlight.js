@@ -1,8 +1,29 @@
-// Resaltado sencillo por selección: crea rectángulos sobre el texto seleccionado.
-// Nota: se guarda en memoria (si recargas, se pierde). Se puede persistir luego con localStorage.
+import { loadHighlights, saveHighlights } from "./storage.js";
 
-export function initHighlighting({ textLayerEl, highlightLayerEl, onStatus }) {
-  const highlightsByPage = new Map(); // pageNumber -> array of rects
+function uid() {
+  return crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2);
+}
+
+export function initHighlighting({
+  textLayerEl,
+  highlightLayerEl,
+  onStatus,
+  onChange
+}) {
+  let docHash = null;
+  let store = []; // [{id,page,rects:[{x,y,w,h}],text,createdAt}]
+
+  function setDocHash(hash) {
+    docHash = hash;
+    store = docHash ? loadHighlights(docHash) : [];
+    onChange?.(store);
+  }
+
+  function persist() {
+    if (!docHash) return;
+    saveHighlights(docHash, store);
+    onChange?.(store);
+  }
 
   function clearLayer() {
     highlightLayerEl.innerHTML = "";
@@ -10,61 +31,94 @@ export function initHighlighting({ textLayerEl, highlightLayerEl, onStatus }) {
 
   function renderHighlights(pageNumber) {
     clearLayer();
-    const rects = highlightsByPage.get(pageNumber) || [];
+    const layerRect = textLayerEl.getBoundingClientRect();
+    const W = layerRect.width || 1;
+    const H = layerRect.height || 1;
+
+    const rects = store
+      .filter(h => h.page === pageNumber)
+      .flatMap(h => h.rects.map(r => ({...r, id: h.id})));
+
     for (const r of rects) {
       const div = document.createElement("div");
       div.className = "hl";
-      div.style.left = `${r.left}px`;
-      div.style.top = `${r.top}px`;
-      div.style.width = `${r.width}px`;
-      div.style.height = `${r.height}px`;
+      div.dataset.hid = r.id;
+      div.style.left = `${r.x * W}px`;
+      div.style.top = `${r.y * H}px`;
+      div.style.width = `${r.w * W}px`;
+      div.style.height = `${r.h * H}px`;
       highlightLayerEl.appendChild(div);
     }
   }
 
-  function addCurrentSelection(pageNumber) {
+  function selectionToNormalizedRects() {
     const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0) return;
+    if (!sel || sel.rangeCount === 0) return null;
 
     const range = sel.getRangeAt(0);
-    if (!textLayerEl.contains(range.commonAncestorContainer)) return;
+    if (!textLayerEl.contains(range.commonAncestorContainer)) return null;
 
     const rects = Array.from(range.getClientRects());
-    if (rects.length === 0) return;
+    if (!rects.length) return null;
 
     const base = textLayerEl.getBoundingClientRect();
-    const stored = highlightsByPage.get(pageNumber) || [];
+    const W = base.width || 1;
+    const H = base.height || 1;
 
-    for (const rr of rects) {
-      // Rect relativo a la capa
-      const left = rr.left - base.left;
-      const top = rr.top - base.top;
-      stored.push({
-        left,
-        top,
-        width: rr.width,
-        height: rr.height
-      });
-    }
+    const norm = rects.map(rr => ({
+      x: (rr.left - base.left) / W,
+      y: (rr.top - base.top) / H,
+      w: rr.width / W,
+      h: rr.height / H
+    }));
 
-    highlightsByPage.set(pageNumber, stored);
+    const text = sel.toString().trim();
     sel.removeAllRanges();
-    onStatus?.("Resaltado añadido");
+
+    return { rects: norm, text };
+  }
+
+  function addHighlight(pageNumber) {
+    if (!docHash) return;
+
+    const out = selectionToNormalizedRects();
+    if (!out) return;
+
+    const entry = {
+      id: uid(),
+      page: pageNumber,
+      rects: out.rects,
+      text: out.text || "(sin texto)",
+      createdAt: Date.now()
+    };
+
+    store.unshift(entry);
+    persist();
+    onStatus?.("Resaltado guardado");
     renderHighlights(pageNumber);
   }
 
-  // Doble click para resaltar selección (evita chocar con click normal)
+  function deleteHighlight(id) {
+    store = store.filter(h => h.id !== id);
+    persist();
+  }
+
+  function clearAllForDoc() {
+    store = [];
+    persist();
+  }
+
+  // Doble click = crear highlight
   textLayerEl.addEventListener("dblclick", () => {
     const pageNumber = Number(textLayerEl.dataset.pageNumber || "1");
-    addCurrentSelection(pageNumber);
+    addHighlight(pageNumber);
   });
 
-  // API pública
   return {
+    setDocHash,
     renderHighlights,
-    clearAll: (pageNumber) => {
-      highlightsByPage.set(pageNumber, []);
-      renderHighlights(pageNumber);
-    }
+    getAll: () => store.slice(),
+    deleteHighlight,
+    clearAllForDoc,
   };
 }
