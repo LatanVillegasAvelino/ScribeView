@@ -14,7 +14,7 @@ export function createPdfViewer({
   onOutlineClick,
   onStatus
 }) {
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { alpha: false });
 
   let pdfDoc = null;
   let currentPage = 1;
@@ -22,8 +22,7 @@ export function createPdfViewer({
   let scale = 1.2;
   let rotation = 0;
 
-  // Cache para búsqueda exacta
-  const pageTextMapCache = new Map(); // page -> { text, ranges: [{start,end,itemIndex}] }
+  const pageTextMapCache = new Map(); // page -> { text, ranges }
 
   async function loadFromArrayBuffer(arrayBuffer) {
     onStatus?.("Cargando PDF…");
@@ -39,6 +38,12 @@ export function createPdfViewer({
     return { totalPages };
   }
 
+  function getOutputScale() {
+    // HiDPI: nitidez real
+    const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+    return dpr;
+  }
+
   async function renderPage(pageNumber) {
     if (!pdfDoc) return;
 
@@ -48,10 +53,23 @@ export function createPdfViewer({
     const page = await pdfDoc.getPage(currentPage);
     const viewport = page.getViewport({ scale, rotation });
 
-    canvas.width = Math.floor(viewport.width);
-    canvas.height = Math.floor(viewport.height);
+    // CSS size
+    canvas.style.width = `${Math.floor(viewport.width)}px`;
+    canvas.style.height = `${Math.floor(viewport.height)}px`;
 
-    await page.render({ canvasContext: ctx, viewport }).promise;
+    // Backing store size (HiDPI)
+    const outputScale = getOutputScale();
+    canvas.width = Math.floor(viewport.width * outputScale);
+    canvas.height = Math.floor(viewport.height * outputScale);
+
+    // Reset transform then scale
+    ctx.setTransform(outputScale, 0, 0, outputScale, 0, 0);
+
+    // Render canvas
+    await page.render({
+      canvasContext: ctx,
+      viewport
+    }).promise;
 
     // Text layer
     textLayerEl.innerHTML = "";
@@ -77,7 +95,6 @@ export function createPdfViewer({
     const page = await pdfDoc.getPage(pageNumber);
     const tc = await page.getTextContent();
 
-    // Construimos texto + rangos por item para mapear coincidencias a spans
     let text = "";
     const ranges = [];
     tc.items.forEach((it, idx) => {
@@ -86,7 +103,6 @@ export function createPdfViewer({
       text += chunk;
       const end = text.length;
       ranges.push({ start, end, itemIndex: idx });
-      // Separador ligero para evitar “pegar” palabras
       text += " ";
     });
 
@@ -103,10 +119,9 @@ export function createPdfViewer({
     const page = await pdfDoc.getPage(currentPage);
     const vp1 = page.getViewport({ scale: 1, rotation });
 
-    const padding = 36; // por márgenes del viewerWrap
+    const padding = 36;
     const available = viewerWrapEl.clientWidth - padding;
-    const nextScale = available / vp1.width;
-    setScale(nextScale);
+    setScale(available / vp1.width);
   }
 
   async function fitPage() {
@@ -115,7 +130,7 @@ export function createPdfViewer({
     const vp1 = page.getViewport({ scale: 1, rotation });
 
     const padW = 36;
-    const padH = 64; // algo para bottom/top
+    const padH = 78;
     const availableW = viewerWrapEl.clientWidth - padW;
     const availableH = viewerWrapEl.clientHeight - padH;
 
@@ -129,10 +144,10 @@ export function createPdfViewer({
     thumbsEl.innerHTML = "";
 
     const thumbScale = 0.18;
+    const outScale = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
 
     for (let p = 1; p <= totalPages; p++) {
       const page = await pdfDoc.getPage(p);
-      const vp = page.getViewport({ scale: 1 });
       const tvp = page.getViewport({ scale: Math.max(0.12, thumbScale) });
 
       const item = document.createElement("div");
@@ -141,15 +156,22 @@ export function createPdfViewer({
 
       const c = document.createElement("canvas");
       c.className = "thumbCanvas";
-      const tctx = c.getContext("2d");
-      c.width = Math.floor(tvp.width);
-      c.height = Math.floor(tvp.height);
+      const tctx = c.getContext("2d", { alpha: false });
+
+      // CSS size
+      c.style.width = `${Math.floor(tvp.width)}px`;
+      c.style.height = `${Math.floor(tvp.height)}px`;
+
+      // HiDPI
+      c.width = Math.floor(tvp.width * outScale);
+      c.height = Math.floor(tvp.height * outScale);
+      tctx.setTransform(outScale, 0, 0, outScale, 0, 0);
 
       await page.render({ canvasContext: tctx, viewport: tvp }).promise;
 
       const meta = document.createElement("div");
       meta.className = "thumbMeta";
-      meta.innerHTML = `<div><b>Página ${p}</b></div><div class="muted">${Math.floor(vp.width)}×${Math.floor(vp.height)}</div>`;
+      meta.innerHTML = `<div><b>Página ${p}</b></div><div class="muted">Toca para ir</div>`;
 
       item.appendChild(c);
       item.appendChild(meta);
