@@ -4,14 +4,24 @@ function uid() {
   return crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2);
 }
 
+function hexToRgba(hex, alpha = 0.35) {
+  const h = String(hex || "").replace("#", "").trim();
+  if (h.length !== 6) return `rgba(255,224,102,${alpha})`;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 export function initHighlighting({
   textLayerEl,
   highlightLayerEl,
+  getCurrentColor,     // <-- NUEVO
   onStatus,
   onChange
 }) {
   let docHash = null;
-  let store = []; // [{id,page,rects:[{x,y,w,h}],text,createdAt}]
+  let store = []; // [{id,page,rects:[{x,y,w,h}],text,createdAt,color}]
 
   function setDocHash(hash) {
     docHash = hash;
@@ -35,19 +45,21 @@ export function initHighlighting({
     const W = layerRect.width || 1;
     const H = layerRect.height || 1;
 
-    const rects = store
-      .filter(h => h.page === pageNumber)
-      .flatMap(h => h.rects.map(r => ({...r, id: h.id})));
+    const items = store.filter(h => h.page === pageNumber);
 
-    for (const r of rects) {
-      const div = document.createElement("div");
-      div.className = "hl";
-      div.dataset.hid = r.id;
-      div.style.left = `${r.x * W}px`;
-      div.style.top = `${r.y * H}px`;
-      div.style.width = `${r.w * W}px`;
-      div.style.height = `${r.h * H}px`;
-      highlightLayerEl.appendChild(div);
+    for (const h of items) {
+      for (const r of h.rects) {
+        const div = document.createElement("div");
+        div.className = "hl";
+        div.dataset.hid = h.id;
+        div.style.left = `${r.x * W}px`;
+        div.style.top = `${r.y * H}px`;
+        div.style.width = `${r.w * W}px`;
+        div.style.height = `${r.h * H}px`;
+        div.style.background = hexToRgba(h.color, 0.38);
+        div.style.outline = `1px solid ${hexToRgba(h.color, 0.55)}`;
+        highlightLayerEl.appendChild(div);
+      }
     }
   }
 
@@ -84,12 +96,15 @@ export function initHighlighting({
     const out = selectionToNormalizedRects();
     if (!out) return;
 
+    const chosen = getCurrentColor?.() || "#ffe066";
+
     const entry = {
       id: uid(),
       page: pageNumber,
       rects: out.rects,
       text: out.text || "(sin texto)",
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      color: chosen
     };
 
     store.unshift(entry);
