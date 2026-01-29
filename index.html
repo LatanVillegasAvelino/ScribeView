@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PDF Reader Pro</title>
+  <title>ScribeView</title>
   <link rel="stylesheet" href="assets/styles.css" />
 </head>
 
@@ -33,6 +33,11 @@
       <button id="zoomOut" class="btn" disabled title="Zoom -">−</button>
       <button id="zoomIn" class="btn" disabled title="Zoom +">＋</button>
       <button id="rotate" class="btn" disabled title="Rotar">⟳</button>
+
+      <div class="divider"></div>
+
+      <button id="fitWidth" class="btn" disabled title="Ajustar al ancho">↔</button>
+      <button id="fitPage" class="btn" disabled title="Ajustar a la página">▢</button>
     </div>
 
     <div class="right">
@@ -52,6 +57,7 @@
       <div class="tabs">
         <button class="tab active" data-tab="thumbs">Miniaturas</button>
         <button class="tab" data-tab="outline">Marcadores</button>
+        <button class="tab" data-tab="notes">Anotaciones</button>
       </div>
 
       <section id="tab-thumbs" class="tabPane active">
@@ -60,6 +66,20 @@
 
       <section id="tab-outline" class="tabPane">
         <div id="outline" class="outline"></div>
+      </section>
+
+      <section id="tab-notes" class="tabPane">
+        <div class="notesHeader">
+          <div class="muted">Highlights guardados para este PDF</div>
+          <button id="clearNotes" class="btn tiny" disabled title="Borrar highlights de este PDF">Borrar</button>
+        </div>
+        <div id="notes" class="notes"></div>
+
+        <div class="notesHeader" style="margin-top:14px;">
+          <div class="muted">Recientes (metadatos)</div>
+          <button id="clearRecent" class="btn tiny" title="Limpiar recientes">Limpiar</button>
+        </div>
+        <div id="recent" class="recent"></div>
       </section>
     </aside>
 
@@ -81,12 +101,11 @@
 
       <footer class="bottombar">
         <span id="status" class="muted">Sin PDF cargado</span>
-        <span class="hint muted">Tip: selecciona texto para resaltar • ←/→ cambia página • +/− zoom</span>
+        <span class="hint muted">Tip: selecciona texto y doble click para resaltar • ←/→ página • +/− zoom</span>
       </footer>
     </section>
   </main>
 
-  <!-- App -->
   <script type="module" src="js/app.js"></script>
 </body>
 </html>
