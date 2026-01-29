@@ -28,6 +28,7 @@ body{
   font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;
   background:var(--bg);
   color:var(--text);
+  overflow:hidden; /* importante para fullscreen fijo */
 }
 
 .muted{color:var(--muted);}
@@ -70,8 +71,6 @@ body{
   border-bottom:1px solid var(--border);
   backdrop-filter:blur(10px);
 }
-
-/* 3 grupos siempre alineados */
 .topbar .left,
 .topbar .mid,
 .topbar .right{
@@ -80,21 +79,16 @@ body{
   gap:10px;
   flex-wrap:wrap;
 }
-
-/* centro real en cualquier tamaño */
 .topbar .mid{
   position:absolute;
   left:50%;
   transform:translateX(-50%);
   justify-content:center;
 }
-
-/* derecha no se rompe */
 .topbar .right{
   margin-left:auto;
   justify-content:flex-end;
 }
-
 .tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
 
 /* ---------- SEARCH PANEL ---------- */
@@ -176,6 +170,7 @@ body{
   height:calc(100% - 56px - 54px);
   display:grid;
   grid-template-columns:320px 1fr;
+  overflow:hidden;
 }
 
 /* ---------- SIDEBAR ---------- */
@@ -199,7 +194,7 @@ body{
 .tabPane.active{display:block;}
 
 /* ---------- VIEWER ---------- */
-.viewerArea{display:flex;flex-direction:column;min-width:0;}
+.viewerArea{display:flex;flex-direction:column;min-width:0;overflow:hidden;}
 .viewerWrap{
   flex:1;
   overflow:auto;
@@ -219,9 +214,11 @@ body{
 
   perspective: 1400px;
   transform-style: preserve-3d;
+
+  /* importante para gesto sin romper selección */
+  touch-action: pan-y;
 }
 
-/* IMPORTANTE para nitidez: canvas siempre en bloque */
 #pdfCanvas{display:block;border-radius:18px;max-width:100%;height:auto;}
 
 .textLayer{position:absolute;inset:0;user-select:text;}
@@ -289,43 +286,84 @@ body{
   flex-wrap:wrap;
 }
 
-/* ---------- FULLSCREEN (FIX: ocupa TODO abajo) ---------- */
-/* NOTA: usamos 100dvh para móviles (arregla el “aire” inferior) */
-:fullscreen body{ background:var(--bg); }
+/* ---------- MENÚ LONG-PRESS ---------- */
+.hlMenu{
+  position:fixed;
+  z-index:200;
+  left:0; top:0;
+  transform:translate(-9999px,-9999px);
+  background:color-mix(in srgb,var(--panel) 94%, transparent);
+  border:1px solid var(--border);
+  border-radius:16px;
+  padding:10px;
+  box-shadow:var(--shadow);
+}
+.hlMenu.hidden{display:none;}
+.hlMenuRow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.hlMenuPalette{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.hlMenuBtn{
+  border:1px solid var(--border);
+  background:var(--card);
+  color:var(--text);
+  border-radius:14px;
+  padding:10px 12px;
+  cursor:pointer;
+}
+.hlMenuBtn.secondary{opacity:.85;}
 
-:fullscreen .topbar,
-:fullscreen .subbar,
-:fullscreen .searchPanel,
-:fullscreen .bottombar{
+/* =========================================================
+   FULLSCREEN REAL (soluciona el “vacío” abajo)
+   Usamos clase .is-fullscreen (JS la activa) + :fullscreen
+   ========================================================= */
+body.is-fullscreen .topbar,
+body.is-fullscreen .subbar,
+body.is-fullscreen .searchPanel,
+body.is-fullscreen .bottombar{
   display:none !important;
 }
 
-:fullscreen .layout{
+body.is-fullscreen .layout{
+  position:fixed !important;
+  inset:0 !important;
+  width:100vw !important;
   height:100dvh !important;
   grid-template-columns:1fr !important;
 }
 
-:fullscreen .viewerArea{
+body.is-fullscreen .viewerArea{
   height:100dvh !important;
 }
 
-:fullscreen .viewerWrap{
+body.is-fullscreen .viewerWrap{
   height:100dvh !important;
   padding:0 !important;
   overflow:auto !important;
 }
 
-/* El PDF se centra pero puede llegar hasta abajo */
-:fullscreen .pageLayer{
+body.is-fullscreen .pageLayer{
   border:none !important;
   border-radius:0 !important;
   box-shadow:none !important;
   margin:0 auto !important;
 }
 
-/* hint abajo no estorba mucho */
-:fullscreen .gestureHint{
-  bottom:16px;
+/* fallback :fullscreen */
+:fullscreen .topbar,
+:fullscreen .subbar,
+:fullscreen .searchPanel,
+:fullscreen .bottombar{
+  display:none !important;
+}
+:fullscreen .layout{
+  position:fixed !important;
+  inset:0 !important;
+  width:100vw !important;
+  height:100dvh !important;
+  grid-template-columns:1fr !important;
+}
+:fullscreen .viewerWrap{
+  height:100dvh !important;
+  padding:0 !important;
 }
 
 /* ---------- RESPONSIVE ---------- */
@@ -346,7 +384,6 @@ body{
 
   .viewerWrap{padding:12px;}
 
-  /* en pantallas pequeñas el centro deja de ser absoluto para que no choque */
   .topbar .mid{
     position:static;
     transform:none;
