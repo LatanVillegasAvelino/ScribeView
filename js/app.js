@@ -60,6 +60,9 @@ const hlMenuPalette = el("hlMenuPalette");
 const hlMenuApply = el("hlMenuApply");
 const hlMenuCancel = el("hlMenuCancel");
 
+// inyectamos un botón extra “Copiar”
+let hlMenuCopyBtn = null;
+
 const themeToggle = el("themeToggle");
 initThemeToggle(themeToggle);
 
@@ -67,7 +70,7 @@ let currentBlobUrl = null;
 let currentDocHash = null;
 let currentFileMeta = null;
 
-const KEY_PREFS = "scribeview:prefs:v5";
+const KEY_PREFS = "scribeview:prefs:v6";
 
 const PALETTE = [
   "#ffe066", "#ffd43b", "#ff922b", "#ff6b6b",
@@ -175,14 +178,15 @@ function applyFilter() {
 viewFilter.addEventListener("change", applyFilter);
 filterStrength.addEventListener("input", applyFilter);
 
-/* ===== Fullscreen + FIX: refit ===== */
+/* ===== Fullscreen (con clase robusta) ===== */
 async function toggleFullscreen() {
   const target = document.documentElement;
   try {
     if (!document.fullscreenElement) await target.requestFullscreen?.();
     else await document.exitFullscreen?.();
   } catch {
-    setStatus("Pantalla completa no disponible.");
+    // algunos móviles no permiten fullscreen real
+    setStatus("Pantalla completa no disponible en este navegador.");
   }
 }
 fullscreenBtn.addEventListener("click", toggleFullscreen);
@@ -192,10 +196,8 @@ autoFullscreen.addEventListener("change", () => {
   savePrefs(prefs);
 });
 
-// FIX CRÍTICO: al entrar/salir de fullscreen, reajusta el PDF
 async function refitAfterLayoutChange() {
   if (!viewer.state.pdfDoc) return;
-  // espera 2 frames para que CSS aplique el layout
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   await viewer.fitPage();
   await viewer.renderPage(viewer.state.currentPage);
@@ -203,7 +205,10 @@ async function refitAfterLayoutChange() {
   await search.markOnCurrentPage();
   updateFooter();
 }
+
 document.addEventListener("fullscreenchange", () => {
+  const on = !!document.fullscreenElement;
+  document.body.classList.toggle("is-fullscreen", on);
   refitAfterLayoutChange();
 });
 
@@ -372,7 +377,6 @@ async function openPdfFile(file){
   updateFooter();
   setStatus(`Listo • ${totalPages} páginas`);
 
-  // al abrir: ajusta a página para evitar “aire”
   await viewer.fitPage();
   await viewer.renderPage(1);
   highlights.renderHighlights(1);
@@ -489,27 +493,212 @@ dropZone.addEventListener("drop", async (e)=>{
   await openPdfFile(file);
 });
 
-/* ===== Gestos pasar página ===== */
+/* ============================================================
+   LONG-PRESS REAL: selecciona palabra si no hay selección
+   + menú con COPIAR + RESALTAR
+   ============================================================ */
+let lpTimer = null;
+let lpActive = false;
+let lpChosenColor = highlightColor.value;
+
+function ensureCopyButton(){
+  if (hlMenuCopyBtn) return;
+  hlMenuCopyBtn = document.createElement("button");
+  hlMenuCopyBtn.id = "hlMenuCopy";
+  hlMenuCopyBtn.className = "hlMenuBtn";
+  hlMenuCopyBtn.textContent = "Copiar";
+  hlMenuApply.before(hlMenuCopyBtn);
+
+  hlMenuCopyBtn.addEventListener("click", async () => {
+    const sel = window.getSelection();
+    const txt = sel ? String(sel).trim() : "";
+    if (!txt) { setStatus("No hay texto para copiar."); return; }
+    try {
+      await navigator.clipboard.writeText(txt);
+      setStatus("Texto copiado ✅");
+      hideHLMenu();
+    } catch {
+      // fallback: intenta método antiguo
+      try {
+        document.execCommand("copy");
+        setStatus("Texto copiado ✅");
+        hideHLMenu();
+      } catch {
+        setStatus("No se pudo copiar (permiso del navegador).");
+      }
+    }
+  });
+}
+ensureCopyButton();
+
+function hideHLMenu() {
+  hlMenu.classList.add("hidden");
+  hlMenu.style.transform = "translate(-9999px,-9999px)";
+  lpActive = false;
+}
+
+function buildHLMenuPalette() {
+  hlMenuPalette.innerHTML = "";
+  for (const c of PALETTE) {
+    const b = document.createElement("button");
+    b.className = "sw";
+    b.type = "button";
+    b.title = c;
+    b.style.background = c;
+    if (c.toLowerCase() === lpChosenColor.toLowerCase()) b.classList.add("active");
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      lpChosenColor = c;
+      highlightColor.value = c;
+      applyHighlightColorUI();
+      buildHLMenuPalette();
+    });
+    hlMenuPalette.appendChild(b);
+  }
+}
+
+function selectionInsideTextLayer() {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return false;
+  const range = sel.getRangeAt(0);
+  return textLayerEl.contains(range.commonAncestorContainer);
+}
+
+function selectWordAtPoint(x, y) {
+  // 1) obtener caret
+  let range = null;
+
+  if (document.caretPositionFromPoint) {
+    const pos = document.caretPositionFromPoint(x, y);
+    if (pos && pos.offsetNode) {
+      range = document.createRange();
+      range.setStart(pos.offsetNode, pos.offset);
+      range.setEnd(pos.offsetNode, pos.offset);
+    }
+  } else if (document.caretRangeFromPoint) {
+    range = document.caretRangeFromPoint(x, y);
+  }
+
+  if (!range) return false;
+
+  // 2) expandir a “palabra” dentro de un textNode
+  const node = range.startContainer;
+  if (!node || node.nodeType !== Node.TEXT_NODE) return false;
+
+  const text = node.textContent || "";
+  let i = range.startOffset;
+
+  const isWord = (ch) => /[0-9A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/.test(ch);
+
+  let start = i;
+  let end = i;
+
+  while (start > 0 && isWord(text[start - 1])) start--;
+  while (end < text.length && isWord(text[end])) end++;
+
+  if (start === end) return false;
+
+  const r2 = document.createRange();
+  r2.setStart(node, start);
+  r2.setEnd(node, end);
+
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(r2);
+  return true;
+}
+
+function showHLMenuAtSelection() {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+
+  const range = sel.getRangeAt(0);
+  const rect = range.getBoundingClientRect();
+  if (!rect || rect.width === 0) return;
+
+  lpChosenColor = highlightColor.value;
+  buildHLMenuPalette();
+
+  const pad = 8;
+  const x = Math.max(pad, Math.min(window.innerWidth - 280, rect.left + rect.width / 2 - 140));
+  const y = Math.max(pad, rect.top - 60);
+
+  hlMenu.classList.remove("hidden");
+  hlMenu.style.transform = `translate(${Math.floor(x)}px, ${Math.floor(y)}px)`;
+  lpActive = true;
+}
+
+pageLayer.addEventListener("touchstart", (e) => {
+  if (!viewer.state.pdfDoc) return;
+
+  const t = e.touches?.[0];
+  if (!t) return;
+
+  clearTimeout(lpTimer);
+  lpTimer = setTimeout(() => {
+    // Si el navegador no seleccionó nada, seleccionamos una palabra nosotros:
+    const sel = window.getSelection();
+    const hasSelection = sel && !sel.isCollapsed && String(sel).trim().length > 0;
+
+    if (!hasSelection) {
+      const ok = selectWordAtPoint(t.clientX, t.clientY);
+      if (!ok) return;
+    }
+
+    if (!selectionInsideTextLayer()) return;
+    showHLMenuAtSelection();
+  }, 520);
+}, { passive: true });
+
+pageLayer.addEventListener("touchend", () => {
+  clearTimeout(lpTimer);
+}, { passive: true });
+
+document.addEventListener("click", (e) => {
+  if (!lpActive) return;
+  if (!hlMenu.contains(e.target)) hideHLMenu();
+});
+
+hlMenuCancel.addEventListener("click", () => hideHLMenu());
+
+hlMenuApply.addEventListener("click", () => {
+  if (!viewer.state.pdfDoc) return;
+  const page = viewer.state.currentPage || 1;
+  const ok = highlights.addFromCurrentSelection(page, lpChosenColor);
+  if (ok) {
+    highlights.renderHighlights(page);
+    setStatus("Resaltado guardado ✅");
+  } else {
+    setStatus("Selecciona texto primero.");
+  }
+  hideHLMenu();
+});
+
+/* ===== Gestos pasar página (NO rompe selección) ===== */
 let sx=0, sy=0, lx=0, ly=0, moved=false;
+
 function selectionEmpty(){
   const s = window.getSelection();
   return !s || s.isCollapsed || String(s).trim().length === 0;
 }
-function loaded(){ return !!viewer.state.pdfDoc; }
 
 pageLayer.addEventListener("touchstart",(e)=>{
-  if(!loaded()) return;
+  if(!viewer.state.pdfDoc) return;
   const t=e.touches?.[0]; if(!t) return;
   moved=false; sx=lx=t.clientX; sy=ly=t.clientY;
 },{passive:true});
+
 pageLayer.addEventListener("touchmove",(e)=>{
-  if(!loaded()) return;
+  if(!viewer.state.pdfDoc) return;
   const t=e.touches?.[0]; if(!t) return;
   lx=t.clientX; ly=t.clientY;
   if(Math.abs(lx-sx)>12 || Math.abs(ly-sy)>12) moved=true;
 },{passive:true});
+
 pageLayer.addEventListener("touchend", async ()=>{
-  if(!loaded()) return;
+  if(!viewer.state.pdfDoc) return;
+
+  // si hay selección, NO cambiar página
   if(!selectionEmpty()) return;
 
   const dx=lx-sx, dy=ly-sy;
@@ -518,11 +707,20 @@ pageLayer.addEventListener("touchend", async ()=>{
     else await goToPage(viewer.state.currentPage-1,"prev");
     return;
   }
+
   const r=pageLayer.getBoundingClientRect();
   const x=lx-r.left, w=r.width||1;
   if(x<=w*0.28) await goToPage(viewer.state.currentPage-1,"prev");
   else if(x>=w*0.72) await goToPage(viewer.state.currentPage+1,"next");
 },{passive:true});
+
+/* ===== Teclado ===== */
+window.addEventListener("keydown",(e)=>{
+  if(!viewer.state.pdfDoc) return;
+  if(e.key==="ArrowLeft") goToPage(viewer.state.currentPage-1, "prev");
+  if(e.key==="ArrowRight") goToPage(viewer.state.currentPage+1, "next");
+  if(e.key==="Escape") hideHLMenu();
+});
 
 /* ===== INIT ===== */
 setEnabled(false);
@@ -532,3 +730,4 @@ renderRecent();
 applyFilter();
 applyHighlightColorUI();
 updateFooter();
+hideHLMenu();
