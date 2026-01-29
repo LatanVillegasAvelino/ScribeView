@@ -2,17 +2,19 @@
 <html lang="es">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ScribeView</title>
+
   <link rel="stylesheet" href="assets/styles.css" />
 </head>
 
 <body>
+  <!-- ================= TOPBAR ================= -->
   <header class="topbar">
     <div class="left">
-      <button id="toggleSidebar" class="btn" title="Mostrar/Ocultar panel">☰</button>
+      <button id="toggleSidebar" class="btn" title="Menú">☰</button>
 
-      <label class="fileBtn btn" title="Abrir PDF">
+      <label class="fileBtn btn">
         Abrir PDF
         <input id="fileInput" type="file" accept="application/pdf" hidden />
       </label>
@@ -21,30 +23,32 @@
     </div>
 
     <div class="center">
-      <button id="prevPage" class="btn" disabled title="Página anterior">◀</button>
+      <button id="prevPage" class="btn" disabled>◀</button>
+
       <div class="pageBox">
         <input id="pageNumber" type="number" min="1" value="1" />
         <span id="pageCount">/ 0</span>
       </div>
-      <button id="nextPage" class="btn" disabled title="Página siguiente">▶</button>
+
+      <button id="nextPage" class="btn" disabled>▶</button>
 
       <div class="divider"></div>
 
-      <button id="zoomOut" class="btn" disabled title="Zoom -">−</button>
-      <button id="zoomIn" class="btn" disabled title="Zoom +">＋</button>
-      <button id="rotate" class="btn" disabled title="Rotar">⟳</button>
+      <button id="zoomOut" class="btn" disabled>−</button>
+      <button id="zoomIn" class="btn" disabled>＋</button>
+      <button id="rotate" class="btn" disabled>⟳</button>
 
       <div class="divider"></div>
 
       <button id="fitWidth" class="btn" disabled title="Ajustar al ancho">↔</button>
-      <button id="fitPage" class="btn" disabled title="Ajustar a la página">▢</button>
+      <button id="fitPage" class="btn" disabled title="Ajustar a página">▢</button>
     </div>
 
     <div class="right">
       <div class="search">
         <input id="searchInput" type="search" placeholder="Buscar en el PDF…" disabled />
-        <button id="searchPrev" class="btn" disabled title="Resultado anterior">↑</button>
-        <button id="searchNext" class="btn" disabled title="Siguiente resultado">↓</button>
+        <button id="searchPrev" class="btn" disabled>↑</button>
+        <button id="searchNext" class="btn" disabled>↓</button>
         <span id="searchCount" class="muted">0</span>
       </div>
 
@@ -52,8 +56,10 @@
     </div>
   </header>
 
+  <!-- ================= LAYOUT ================= -->
   <main class="layout">
-    <aside id="sidebar" class="sidebar">
+    <!-- ========== SIDEBAR ========== -->
+    <aside id="sidebar" class="sidebar hidden">
       <div class="tabs">
         <button class="tab active" data-tab="thumbs">Miniaturas</button>
         <button class="tab" data-tab="outline">Marcadores</button>
@@ -70,27 +76,34 @@
 
       <section id="tab-notes" class="tabPane">
         <div class="notesHeader">
-          <div class="muted">Highlights guardados para este PDF</div>
-          <button id="clearNotes" class="btn tiny" disabled title="Borrar highlights de este PDF">Borrar</button>
+          <div class="muted">Highlights guardados</div>
+          <button id="clearNotes" class="btn tiny" disabled>Borrar</button>
         </div>
+
         <div id="notes" class="notes"></div>
 
         <div class="notesHeader" style="margin-top:14px;">
-          <div class="muted">Recientes (metadatos)</div>
-          <button id="clearRecent" class="btn tiny" title="Limpiar recientes">Limpiar</button>
+          <div class="muted">Recientes</div>
+          <button id="clearRecent" class="btn tiny">Limpiar</button>
         </div>
+
         <div id="recent" class="recent"></div>
       </section>
     </aside>
 
+    <!-- ========== VIEWER ========== -->
     <section class="viewerArea">
+      <!-- DROPZONE -->
       <div id="dropZone" class="dropZone">
         <div class="dropCard">
-          <div class="dropTitle">Arrastra y suelta un PDF aquí</div>
-          <div class="dropSub">o usa “Abrir PDF” arriba</div>
+          <div style="font-size:20px;font-weight:600;">Arrastra y suelta un PDF</div>
+          <div class="muted" style="margin-top:6px;">
+            o usa “Abrir PDF” arriba
+          </div>
         </div>
       </div>
 
+      <!-- PDF VIEW -->
       <div id="viewerWrap" class="viewerWrap hidden">
         <div id="pageLayer" class="pageLayer">
           <canvas id="pdfCanvas"></canvas>
@@ -99,13 +112,17 @@
         </div>
       </div>
 
+      <!-- FOOTER -->
       <footer class="bottombar">
         <span id="status" class="muted">Sin PDF cargado</span>
-        <span class="hint muted">Tip: selecciona texto y doble click para resaltar • ←/→ página • +/− zoom</span>
+        <span class="hint muted">
+          Tip: selecciona texto y doble click para resaltar • ← / → página • + / − zoom
+        </span>
       </footer>
     </section>
   </main>
 
+  <!-- ================= APP ================= -->
   <script type="module" src="js/app.js"></script>
 </body>
 </html>
