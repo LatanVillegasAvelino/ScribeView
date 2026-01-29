@@ -4,7 +4,7 @@ function uid() {
   return crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2);
 }
 
-function hexToRgba(hex, alpha = 0.35) {
+function hexToRgba(hex, alpha = 0.42) {
   const h = String(hex || "").replace("#", "").trim();
   if (h.length !== 6) return `rgba(255,224,102,${alpha})`;
   const r = parseInt(h.slice(0, 2), 16);
@@ -16,7 +16,7 @@ function hexToRgba(hex, alpha = 0.35) {
 export function initHighlighting({
   textLayerEl,
   highlightLayerEl,
-  getCurrentColor,     // <-- NUEVO
+  getCurrentColor,
   onStatus,
   onChange
 }) {
@@ -48,6 +48,9 @@ export function initHighlighting({
     const items = store.filter(h => h.page === pageNumber);
 
     for (const h of items) {
+      const fill = hexToRgba(h.color, 0.45);
+      const outline = hexToRgba(h.color, 0.70);
+
       for (const r of h.rects) {
         const div = document.createElement("div");
         div.className = "hl";
@@ -56,8 +59,8 @@ export function initHighlighting({
         div.style.top = `${r.y * H}px`;
         div.style.width = `${r.w * W}px`;
         div.style.height = `${r.h * H}px`;
-        div.style.background = hexToRgba(h.color, 0.38);
-        div.style.outline = `1px solid ${hexToRgba(h.color, 0.55)}`;
+        div.style.background = fill;
+        div.style.outline = `1px solid ${outline}`;
         highlightLayerEl.appendChild(div);
       }
     }
@@ -114,8 +117,20 @@ export function initHighlighting({
   }
 
   function deleteHighlight(id) {
+    const before = store.length;
     store = store.filter(h => h.id !== id);
+    if (store.length !== before) {
+      persist();
+      onStatus?.("Highlight borrado");
+    }
+  }
+
+  function updateHighlightColor(id, color) {
+    const h = store.find(x => x.id === id);
+    if (!h) return;
+    h.color = color;
     persist();
+    onStatus?.("Color actualizado");
   }
 
   function clearAllForDoc() {
@@ -123,7 +138,6 @@ export function initHighlighting({
     persist();
   }
 
-  // Doble click = crear highlight
   textLayerEl.addEventListener("dblclick", () => {
     const pageNumber = Number(textLayerEl.dataset.pageNumber || "1");
     addHighlight(pageNumber);
@@ -134,6 +148,7 @@ export function initHighlighting({
     renderHighlights,
     getAll: () => store.slice(),
     deleteHighlight,
+    updateHighlightColor,
     clearAllForDoc,
   };
 }
