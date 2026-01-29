@@ -1,14 +1,19 @@
-// PDF Viewer basado en PDF.js (CDN)
-// Render: canvas + textLayer. Miniaturas. Outline (marc: marcadores).
-
-// PDF.js ES module desde CDN:
 import * as pdfjsLib from "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.mjs";
 import * as pdfjsViewer from "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/web/pdf_viewer.mjs";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs";
 
-export function createPdfViewer({ canvas, textLayerEl, thumbsEl, outlineEl, onThumbClick, onOutlineClick, onStatus }) {
+export function createPdfViewer({
+  canvas,
+  textLayerEl,
+  thumbsEl,
+  outlineEl,
+  viewerWrapEl,
+  onThumbClick,
+  onOutlineClick,
+  onStatus
+}) {
   const ctx = canvas.getContext("2d");
 
   let pdfDoc = null;
@@ -17,7 +22,8 @@ export function createPdfViewer({ canvas, textLayerEl, thumbsEl, outlineEl, onTh
   let scale = 1.2;
   let rotation = 0;
 
-  const pageTextCache = new Map(); // page -> string
+  // Cache para búsqueda exacta
+  const pageTextMapCache = new Map(); // page -> { text, ranges: [{start,end,itemIndex}] }
 
   async function loadFromArrayBuffer(arrayBuffer) {
     onStatus?.("Cargando PDF…");
@@ -27,7 +33,7 @@ export function createPdfViewer({ canvas, textLayerEl, thumbsEl, outlineEl, onTh
     currentPage = 1;
     scale = 1.2;
     rotation = 0;
-    pageTextCache.clear();
+    pageTextMapCache.clear();
 
     onStatus?.(`PDF cargado (${totalPages} páginas)`);
     return { totalPages };
@@ -45,10 +51,9 @@ export function createPdfViewer({ canvas, textLayerEl, thumbsEl, outlineEl, onTh
     canvas.width = Math.floor(viewport.width);
     canvas.height = Math.floor(viewport.height);
 
-    // Render canvas
     await page.render({ canvasContext: ctx, viewport }).promise;
 
-    // Render text layer
+    // Text layer
     textLayerEl.innerHTML = "";
     textLayerEl.style.width = `${viewport.width}px`;
     textLayerEl.style.height = `${viewport.height}px`;
@@ -65,19 +70,59 @@ export function createPdfViewer({ canvas, textLayerEl, thumbsEl, outlineEl, onTh
     onStatus?.(`Listo • Zoom ${(scale * 100).toFixed(0)}% • Rotación ${rotation}°`);
   }
 
-  async function getPageText(pageNumber) {
-    if (!pdfDoc) return "";
-    if (pageTextCache.has(pageNumber)) return pageTextCache.get(pageNumber);
+  async function getPageTextMap(pageNumber) {
+    if (!pdfDoc) return { text: "", ranges: [] };
+    if (pageTextMapCache.has(pageNumber)) return pageTextMapCache.get(pageNumber);
 
     const page = await pdfDoc.getPage(pageNumber);
     const tc = await page.getTextContent();
-    const text = tc.items.map(i => i.str).join(" ");
-    pageTextCache.set(pageNumber, text);
-    return text;
+
+    // Construimos texto + rangos por item para mapear coincidencias a spans
+    let text = "";
+    const ranges = [];
+    tc.items.forEach((it, idx) => {
+      const start = text.length;
+      const chunk = it.str ?? "";
+      text += chunk;
+      const end = text.length;
+      ranges.push({ start, end, itemIndex: idx });
+      // Separador ligero para evitar “pegar” palabras
+      text += " ";
+    });
+
+    const out = { text, ranges };
+    pageTextMapCache.set(pageNumber, out);
+    return out;
   }
 
   function setScale(next) { scale = Math.min(4.0, Math.max(0.4, next)); }
   function setRotation(next) { rotation = ((next % 360) + 360) % 360; }
+
+  async function fitWidth() {
+    if (!pdfDoc) return;
+    const page = await pdfDoc.getPage(currentPage);
+    const vp1 = page.getViewport({ scale: 1, rotation });
+
+    const padding = 36; // por márgenes del viewerWrap
+    const available = viewerWrapEl.clientWidth - padding;
+    const nextScale = available / vp1.width;
+    setScale(nextScale);
+  }
+
+  async function fitPage() {
+    if (!pdfDoc) return;
+    const page = await pdfDoc.getPage(currentPage);
+    const vp1 = page.getViewport({ scale: 1, rotation });
+
+    const padW = 36;
+    const padH = 64; // algo para bottom/top
+    const availableW = viewerWrapEl.clientWidth - padW;
+    const availableH = viewerWrapEl.clientHeight - padH;
+
+    const sW = availableW / vp1.width;
+    const sH = availableH / vp1.height;
+    setScale(Math.min(sW, sH));
+  }
 
   async function buildThumbnails() {
     if (!pdfDoc) return;
@@ -110,7 +155,6 @@ export function createPdfViewer({ canvas, textLayerEl, thumbsEl, outlineEl, onTh
       item.appendChild(meta);
 
       item.addEventListener("click", () => onThumbClick?.(p));
-
       thumbsEl.appendChild(item);
     }
 
@@ -119,8 +163,7 @@ export function createPdfViewer({ canvas, textLayerEl, thumbsEl, outlineEl, onTh
 
   function setActiveThumb(pageNumber) {
     thumbsEl.querySelectorAll(".thumbItem").forEach(el => el.classList.remove("active"));
-    const active = thumbsEl.querySelector(`.thumbItem[data-page="${pageNumber}"]`);
-    active?.classList.add("active");
+    thumbsEl.querySelector(`.thumbItem[data-page="${pageNumber}"]`)?.classList.add("active");
   }
 
   async function buildOutline() {
@@ -146,7 +189,6 @@ export function createPdfViewer({ canvas, textLayerEl, thumbsEl, outlineEl, onTh
         });
 
         outlineEl.appendChild(div);
-
         if (it.items && it.items.length) renderItems(it.items, depth + 1);
       }
     };
@@ -159,8 +201,6 @@ export function createPdfViewer({ canvas, textLayerEl, thumbsEl, outlineEl, onTh
       if (!outlineItem.dest) return null;
       const dest = await pdfDoc.getDestination(outlineItem.dest);
       if (!dest) return null;
-
-      // dest[0] es una ref a página
       const pageIndex = await pdfDoc.getPageIndex(dest[0]);
       return pageIndex + 1;
     } catch {
@@ -175,10 +215,10 @@ export function createPdfViewer({ canvas, textLayerEl, thumbsEl, outlineEl, onTh
     buildOutline,
     setScale,
     setRotation,
-    getPageText,
+    fitWidth,
+    fitPage,
+    getPageTextMap,
     setActiveThumb,
-    get state() {
-      return { pdfDoc, currentPage, totalPages, scale, rotation };
-    }
+    get state() { return { pdfDoc, currentPage, totalPages, scale, rotation }; }
   };
 }
