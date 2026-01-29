@@ -2,6 +2,7 @@ import { initThemeToggle } from "./theme.js";
 import { initHighlighting } from "./highlight.js";
 import { createSearchController } from "./search.js";
 import { createPdfViewer } from "./pdf-viewer.js";
+import { sha256Hex, addRecent, loadRecent, clearRecent, clearHighlights } from "./storage.js";
 
 const el = (id) => document.getElementById(id);
 
@@ -16,6 +17,8 @@ const pageCountLabel = el("pageCount");
 const zoomOutBtn = el("zoomOut");
 const zoomInBtn = el("zoomIn");
 const rotateBtn = el("rotate");
+const fitWidthBtn = el("fitWidth");
+const fitPageBtn = el("fitPage");
 
 const searchInput = el("searchInput");
 const searchPrevBtn = el("searchPrev");
@@ -25,6 +28,11 @@ const status = el("status");
 const sidebar = el("sidebar");
 const thumbsEl = el("thumbs");
 const outlineEl = el("outline");
+const notesEl = el("notes");
+const clearNotesBtn = el("clearNotes");
+
+const recentEl = el("recent");
+const clearRecentBtn = el("clearRecent");
 
 const viewerWrap = el("viewerWrap");
 const dropZone = el("dropZone");
@@ -37,13 +45,17 @@ const themeToggle = el("themeToggle");
 initThemeToggle(themeToggle);
 
 let currentBlobUrl = null;
+let currentDocHash = null;
+let currentFileMeta = null;
 
 function setStatus(msg) { status.textContent = msg; }
 
 function setEnabled(enabled) {
   [
     prevPageBtn, nextPageBtn, pageNumberInput, zoomOutBtn, zoomInBtn, rotateBtn,
-    downloadBtn, searchInput, searchPrevBtn, searchNextBtn
+    fitWidthBtn, fitPageBtn,
+    downloadBtn, searchInput, searchPrevBtn, searchNextBtn,
+    clearNotesBtn
   ].forEach(b => b.disabled = !enabled);
 }
 
@@ -67,11 +79,92 @@ function showDrop() {
   dropZone.classList.remove("hidden");
 }
 
+function formatDate(ts) {
+  const d = new Date(ts);
+  return d.toLocaleString();
+}
+
+function renderRecent() {
+  const list = loadRecent();
+  if (!list.length) {
+    recentEl.innerHTML = `<div class="muted">Sin recientes.</div>`;
+    return;
+  }
+  recentEl.innerHTML = "";
+  for (const r of list) {
+    const div = document.createElement("div");
+    div.className = "recentItem";
+    div.innerHTML = `
+      <div class="noteTop">
+        <div><b>${escapeHtml(r.name || "PDF")}</b></div>
+        <div class="noteMeta">${new Date(r.lastOpened).toLocaleDateString()}</div>
+      </div>
+      <div class="noteMeta">hash: ${r.hash.slice(0, 10)}… • ${(r.size/1024/1024).toFixed(2)} MB</div>
+      <div class="noteMeta">Último: ${formatDate(r.lastOpened)}</div>
+      <div class="noteMeta">*Para reabrir debes seleccionar el archivo otra vez*</div>
+    `;
+    recentEl.appendChild(div);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, m => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[m]));
+}
+
+function renderNotes(list) {
+  if (!currentDocHash) {
+    notesEl.innerHTML = `<div class="muted">Abre un PDF para ver anotaciones.</div>`;
+    return;
+  }
+  if (!list.length) {
+    notesEl.innerHTML = `<div class="muted">Aún no hay highlights. Selecciona texto y doble click.</div>`;
+    return;
+  }
+
+  notesEl.innerHTML = "";
+  for (const h of list) {
+    const div = document.createElement("div");
+    div.className = "noteItem";
+    div.dataset.hid = h.id;
+    div.innerHTML = `
+      <div class="noteTop">
+        <div><b>Pág. ${h.page}</b></div>
+        <div class="noteMeta">${new Date(h.createdAt).toLocaleTimeString()}</div>
+      </div>
+      <div class="noteText">${escapeHtml(h.text).slice(0, 160)}</div>
+      <div class="noteMeta">${formatDate(h.createdAt)}</div>
+    `;
+    div.addEventListener("click", async () => {
+      await goToHighlight(h.id);
+    });
+    notesEl.appendChild(div);
+  }
+}
+
+async function goToHighlight(id) {
+  const list = highlights.getAll();
+  const h = list.find(x => x.id === id);
+  if (!h) return;
+
+  await viewer.renderPage(h.page);
+  viewer.setActiveThumb(h.page);
+  highlights.renderHighlights(h.page);
+  await search.markOnCurrentPage();
+  updateNav();
+
+  // enfoque visual: scroll a primer rect
+  const rectEl = highlightLayerEl.querySelector(`.hl[data-hid="${id}"]`);
+  rectEl?.scrollIntoView({ block: "center", inline: "nearest" });
+  el("pageLayer")?.classList.add("flash");
+  setTimeout(() => el("pageLayer")?.classList.remove("flash"), 1200);
+}
+
 const viewer = createPdfViewer({
   canvas,
   textLayerEl,
   thumbsEl,
   outlineEl,
+  viewerWrapEl: viewerWrap,
   onThumbClick: async (page) => {
     await viewer.renderPage(page);
     viewer.setActiveThumb(page);
@@ -92,11 +185,15 @@ const viewer = createPdfViewer({
 const highlights = initHighlighting({
   textLayerEl,
   highlightLayerEl,
-  onStatus: setStatus
+  onStatus: setStatus,
+  onChange: (list) => {
+    renderNotes(list);
+    clearNotesBtn.disabled = !(currentDocHash && list.length);
+  }
 });
 
 const search = createSearchController({
-  getPageText: (p) => viewer.getPageText(p),
+  getPageTextMap: (p) => viewer.getPageTextMap(p),
   renderPage: async (p) => {
     await viewer.renderPage(p);
     viewer.setActiveThumb(p);
@@ -116,12 +213,31 @@ async function openPdfFile(file) {
     return;
   }
 
-  // preparar descarga
+  // URL para descarga
   if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
   currentBlobUrl = URL.createObjectURL(file);
 
   const arrayBuffer = await file.arrayBuffer();
+
+  // Hash del documento (para highlights + recientes)
+  setStatus("Calculando hash…");
+  currentDocHash = await sha256Hex(arrayBuffer);
+  currentFileMeta = { name: file.name, size: file.size };
+
+  // Guardar en recientes
+  addRecent({
+    name: file.name,
+    size: file.size,
+    hash: currentDocHash,
+    lastOpened: Date.now()
+  });
+  renderRecent();
+
+  // Cargar PDF
   const { totalPages } = await viewer.loadFromArrayBuffer(arrayBuffer);
+
+  // Conectar highlights a este PDF (por hash)
+  highlights.setDocHash(currentDocHash);
 
   showViewer();
   setEnabled(true);
@@ -136,7 +252,8 @@ async function openPdfFile(file) {
   searchInput.value = "";
 
   downloadBtn.disabled = false;
-  setStatus(`Listo • ${totalPages} páginas`);
+  clearNotesBtn.disabled = !highlights.getAll().length;
+  setStatus(`Listo • ${totalPages} páginas • hash ${currentDocHash.slice(0, 10)}…`);
 }
 
 fileInput.addEventListener("change", async (e) => {
@@ -148,15 +265,14 @@ downloadBtn.addEventListener("click", () => {
   if (!currentBlobUrl) return;
   const a = document.createElement("a");
   a.href = currentBlobUrl;
-  a.download = "documento.pdf";
+  a.download = currentFileMeta?.name || "documento.pdf";
   document.body.appendChild(a);
   a.click();
   a.remove();
 });
 
 prevPageBtn.addEventListener("click", async () => {
-  const s = viewer.state;
-  await viewer.renderPage(s.currentPage - 1);
+  await viewer.renderPage(viewer.state.currentPage - 1);
   viewer.setActiveThumb(viewer.state.currentPage);
   highlights.renderHighlights(viewer.state.currentPage);
   await search.markOnCurrentPage();
@@ -164,8 +280,7 @@ prevPageBtn.addEventListener("click", async () => {
 });
 
 nextPageBtn.addEventListener("click", async () => {
-  const s = viewer.state;
-  await viewer.renderPage(s.currentPage + 1);
+  await viewer.renderPage(viewer.state.currentPage + 1);
   viewer.setActiveThumb(viewer.state.currentPage);
   highlights.renderHighlights(viewer.state.currentPage);
   await search.markOnCurrentPage();
@@ -205,10 +320,27 @@ rotateBtn.addEventListener("click", async () => {
   updateNav();
 });
 
+fitWidthBtn.addEventListener("click", async () => {
+  await viewer.fitWidth();
+  await viewer.renderPage(viewer.state.currentPage);
+  highlights.renderHighlights(viewer.state.currentPage);
+  await search.markOnCurrentPage();
+  updateNav();
+});
+
+fitPageBtn.addEventListener("click", async () => {
+  await viewer.fitPage();
+  await viewer.renderPage(viewer.state.currentPage);
+  highlights.renderHighlights(viewer.state.currentPage);
+  await search.markOnCurrentPage();
+  updateNav();
+});
+
 searchInput.addEventListener("input", async () => {
   await search.buildHits(searchInput.value);
-  searchPrevBtn.disabled = !searchInput.value.trim();
-  searchNextBtn.disabled = !searchInput.value.trim();
+  const has = !!searchInput.value.trim();
+  searchPrevBtn.disabled = !has;
+  searchNextBtn.disabled = !has;
 });
 
 searchNextBtn.addEventListener("click", async () => search.next());
@@ -223,9 +355,24 @@ document.querySelectorAll(".tab").forEach(btn => {
     document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
     document.querySelectorAll(".tabPane").forEach(p => p.classList.remove("active"));
     btn.classList.add("active");
-    const tab = btn.dataset.tab;
-    el(`tab-${tab}`).classList.add("active");
+    el(`tab-${btn.dataset.tab}`).classList.add("active");
   });
+});
+
+// Borrar highlights del PDF actual
+clearNotesBtn.addEventListener("click", () => {
+  if (!currentDocHash) return;
+  clearHighlights(currentDocHash);
+  highlights.setDocHash(currentDocHash); // recarga vacío
+  highlights.renderHighlights(viewer.state.currentPage);
+  setStatus("Highlights borrados para este PDF");
+});
+
+// Limpiar recientes
+clearRecentBtn.addEventListener("click", () => {
+  clearRecent();
+  renderRecent();
+  setStatus("Recientes limpiados");
 });
 
 // Drag & drop
@@ -257,7 +404,8 @@ window.addEventListener("keydown", async (e) => {
   if (e.key === "-" || e.key === "_") zoomOutBtn.click();
 });
 
-// Estado inicial
+// Inicial
 setEnabled(false);
 showDrop();
 setStatus("Sin PDF cargado");
+renderRecent();
