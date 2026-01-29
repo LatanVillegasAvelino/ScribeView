@@ -4,7 +4,7 @@ function uid() {
   return crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2);
 }
 
-function hexToRgba(hex, alpha = 0.42) {
+function hexToRgba(hex, alpha = 0.45) {
   const h = String(hex || "").replace("#", "").trim();
   if (h.length !== 6) return `rgba(255,224,102,${alpha})`;
   const r = parseInt(h.slice(0, 2), 16);
@@ -21,7 +21,7 @@ export function initHighlighting({
   onChange
 }) {
   let docHash = null;
-  let store = []; // [{id,page,rects:[{x,y,w,h}],text,createdAt,color}]
+  let store = [];
 
   function setDocHash(hash) {
     docHash = hash;
@@ -46,10 +46,9 @@ export function initHighlighting({
     const H = layerRect.height || 1;
 
     const items = store.filter(h => h.page === pageNumber);
-
     for (const h of items) {
-      const fill = hexToRgba(h.color, 0.45);
-      const outline = hexToRgba(h.color, 0.70);
+      const fill = hexToRgba(h.color, 0.48);
+      const outline = hexToRgba(h.color, 0.72);
 
       for (const r of h.rects) {
         const div = document.createElement("div");
@@ -88,32 +87,37 @@ export function initHighlighting({
     }));
 
     const text = sel.toString().trim();
-    sel.removeAllRanges();
-
     return { rects: norm, text };
   }
 
-  function addHighlight(pageNumber) {
+  function addHighlightFromRects(pageNumber, rects, text, color) {
     if (!docHash) return;
-
-    const out = selectionToNormalizedRects();
-    if (!out) return;
-
-    const chosen = getCurrentColor?.() || "#ffe066";
 
     const entry = {
       id: uid(),
       page: pageNumber,
-      rects: out.rects,
-      text: out.text || "(sin texto)",
+      rects,
+      text: text || "(sin texto)",
       createdAt: Date.now(),
-      color: chosen
+      color: color || (getCurrentColor?.() || "#ffe066")
     };
 
     store.unshift(entry);
     persist();
     onStatus?.("Resaltado guardado");
     renderHighlights(pageNumber);
+
+    // limpia selección
+    const sel = window.getSelection();
+    sel?.removeAllRanges?.();
+  }
+
+  function addFromCurrentSelection(pageNumber, colorOverride) {
+    const out = selectionToNormalizedRects();
+    if (!out) return false;
+    const chosen = colorOverride || (getCurrentColor?.() || "#ffe066");
+    addHighlightFromRects(pageNumber, out.rects, out.text, chosen);
+    return true;
   }
 
   function deleteHighlight(id) {
@@ -138,9 +142,10 @@ export function initHighlighting({
     persist();
   }
 
+  // Desktop: doble click
   textLayerEl.addEventListener("dblclick", () => {
     const pageNumber = Number(textLayerEl.dataset.pageNumber || "1");
-    addHighlight(pageNumber);
+    addFromCurrentSelection(pageNumber);
   });
 
   return {
@@ -150,5 +155,6 @@ export function initHighlighting({
     deleteHighlight,
     updateHighlightColor,
     clearAllForDoc,
+    addFromCurrentSelection, // <-- NUEVO
   };
 }
