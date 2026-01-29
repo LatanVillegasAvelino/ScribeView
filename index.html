@@ -63,7 +63,7 @@
     </div>
   </header>
 
-  <!-- Barra secundaria (Filtros + Color de resaltado) -->
+  <!-- Subbar: filtros + paleta -->
   <div class="subbar">
     <div class="subgroup">
       <span class="subLabel">Filtro:</span>
@@ -75,12 +75,17 @@
       </select>
 
       <span class="subLabel">Intensidad:</span>
-      <input id="filterStrength" type="range" min="0" max="100" value="60" disabled />
-      <span id="filterPct" class="muted">60%</span>
+      <input id="filterStrength" type="range" min="0" max="200" value="120" disabled />
+      <span id="filterPct" class="muted">120%</span>
     </div>
 
     <div class="subgroup">
       <span class="subLabel">Resaltado:</span>
+
+      <div id="palette" class="palette" aria-label="Paleta de colores">
+        <!-- botones creados por JS -->
+      </div>
+
       <input id="highlightColor" type="color" value="#ffe066" disabled />
       <span id="hlSwatch" class="hlSwatch" title="Color actual"></span>
     </div>
@@ -105,7 +110,7 @@
       <section id="tab-notes" class="tabPane">
         <div class="notesHeader">
           <div class="muted">Highlights guardados</div>
-          <button id="clearNotes" class="btn tiny" disabled>Borrar</button>
+          <button id="clearNotes" class="btn tiny" disabled>Borrar todo</button>
         </div>
 
         <div id="notes" class="notes"></div>
@@ -132,6 +137,11 @@
           <canvas id="pdfCanvas"></canvas>
           <div id="textLayer" class="textLayer"></div>
           <div id="highlightLayer" class="highlightLayer"></div>
+
+          <!-- Hint de gestos -->
+          <div class="gestureHint muted">
+            Desliza ← / → para cambiar página • Toca borde izq/der
+          </div>
         </div>
       </div>
 
