@@ -9,7 +9,7 @@
 </head>
 
 <body>
-  <!-- TOPBAR (sin bloque morado) -->
+  <!-- TOPBAR: Auto + Tema suben arriba (como tus cuadros verdes) -->
   <header class="topbar">
     <div class="left">
       <button id="toggleSidebar" class="btn" title="Menú">☰</button>
@@ -21,16 +21,22 @@
 
       <button id="downloadBtn" class="btn" disabled title="Descargar PDF">⬇</button>
       <button id="fullscreenBtn" class="btn" disabled title="Pantalla completa">⛶</button>
+    </div>
 
+    <!-- (VERDE 1) Auto se queda arriba -->
+    <div class="mid">
       <label class="switch" title="Pantalla completa automática al abrir">
         <input id="autoFullscreen" type="checkbox" />
         <span>Auto</span>
       </label>
+
+      <!-- (VERDE 2) Tema arriba (sol/luna) -->
+      <button id="themeToggle" class="btn" title="Modo oscuro">🌙</button>
     </div>
 
-    <!-- ZONA AMARILLA: herramientas a la derecha -->
+    <!-- Herramientas a la derecha + lupa -->
     <div class="right">
-      <div class="tools" aria-label="Herramientas">
+      <div class="tools">
         <button id="zoomOut" class="btn" disabled title="Zoom -">−</button>
         <button id="zoomIn" class="btn" disabled title="Zoom +">＋</button>
         <button id="rotate" class="btn" disabled title="Rotar">⟳</button>
@@ -38,14 +44,11 @@
         <button id="fitPage" class="btn" disabled title="Ajustar a página">▢</button>
       </div>
 
-      <!-- Lupa (abre/cierra panel de búsqueda) -->
       <button id="searchToggle" class="btn" disabled title="Buscar">🔍</button>
-
-      <button id="themeToggle" class="btn" title="Modo oscuro">🌙</button>
     </div>
   </header>
 
-  <!-- Panel desplegable de búsqueda (se abre con lupa) -->
+  <!-- Panel desplegable de búsqueda (lupa) -->
   <div id="searchPanel" class="searchPanel hidden">
     <div class="searchRow">
       <input id="searchInput" type="search" placeholder="Buscar en el PDF…" disabled />
@@ -101,14 +104,12 @@
           <div class="muted">Highlights guardados</div>
           <button id="clearNotes" class="btn tiny" disabled>Borrar todo</button>
         </div>
-
         <div id="notes" class="notes"></div>
 
         <div class="notesHeader" style="margin-top:14px;">
           <div class="muted">Recientes</div>
           <button id="clearRecent" class="btn tiny">Limpiar</button>
         </div>
-
         <div id="recent" class="recent"></div>
       </section>
     </aside>
@@ -123,12 +124,15 @@
 
       <div id="viewerWrap" class="viewerWrap hidden">
         <div id="pageLayer" class="pageLayer">
+          <!-- Overlay para “pasar hoja” (extra requerido) -->
+          <div id="pageFX" class="pageFX" aria-hidden="true"></div>
+
           <canvas id="pdfCanvas"></canvas>
           <div id="textLayer" class="textLayer"></div>
           <div id="highlightLayer" class="highlightLayer"></div>
 
           <div class="gestureHint muted">
-            Desliza ← / → • Toca borde izq/der
+            Desliza ← / → • Toca borde izq/der • Mantén presionado para resaltar
           </div>
         </div>
       </div>
@@ -139,6 +143,15 @@
       </footer>
     </section>
   </main>
+
+  <!-- Menú flotante para long-press (resaltar/color) -->
+  <div id="hlMenu" class="hlMenu hidden" role="dialog" aria-label="Resaltado">
+    <div class="hlMenuRow">
+      <div id="hlMenuPalette" class="hlMenuPalette"></div>
+      <button id="hlMenuApply" class="hlMenuBtn">Resaltar</button>
+      <button id="hlMenuCancel" class="hlMenuBtn secondary">Cancelar</button>
+    </div>
+  </div>
 
   <script type="module" src="js/app.js"></script>
 </body>
