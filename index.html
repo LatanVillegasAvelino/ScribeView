@@ -1,1 +1,92 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PDF Reader Pro</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
 
+<body>
+  <header class="topbar">
+    <div class="left">
+      <button id="toggleSidebar" class="btn" title="Mostrar/Ocultar panel">☰</button>
+
+      <label class="fileBtn btn" title="Abrir PDF">
+        Abrir PDF
+        <input id="fileInput" type="file" accept="application/pdf" hidden />
+      </label>
+
+      <button id="downloadBtn" class="btn" disabled title="Descargar PDF">⬇</button>
+    </div>
+
+    <div class="center">
+      <button id="prevPage" class="btn" disabled title="Página anterior">◀</button>
+      <div class="pageBox">
+        <input id="pageNumber" type="number" min="1" value="1" />
+        <span id="pageCount">/ 0</span>
+      </div>
+      <button id="nextPage" class="btn" disabled title="Página siguiente">▶</button>
+
+      <div class="divider"></div>
+
+      <button id="zoomOut" class="btn" disabled title="Zoom -">−</button>
+      <button id="zoomIn" class="btn" disabled title="Zoom +">＋</button>
+      <button id="rotate" class="btn" disabled title="Rotar">⟳</button>
+    </div>
+
+    <div class="right">
+      <div class="search">
+        <input id="searchInput" type="search" placeholder="Buscar en el PDF…" disabled />
+        <button id="searchPrev" class="btn" disabled title="Resultado anterior">↑</button>
+        <button id="searchNext" class="btn" disabled title="Siguiente resultado">↓</button>
+        <span id="searchCount" class="muted">0</span>
+      </div>
+
+      <button id="themeToggle" class="btn" title="Modo oscuro">🌙</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside id="sidebar" class="sidebar">
+      <div class="tabs">
+        <button class="tab active" data-tab="thumbs">Miniaturas</button>
+        <button class="tab" data-tab="outline">Marcadores</button>
+      </div>
+
+      <section id="tab-thumbs" class="tabPane active">
+        <div id="thumbs" class="thumbs"></div>
+      </section>
+
+      <section id="tab-outline" class="tabPane">
+        <div id="outline" class="outline"></div>
+      </section>
+    </aside>
+
+    <section class="viewerArea">
+      <div id="dropZone" class="dropZone">
+        <div class="dropCard">
+          <div class="dropTitle">Arrastra y suelta un PDF aquí</div>
+          <div class="dropSub">o usa “Abrir PDF” arriba</div>
+        </div>
+      </div>
+
+      <div id="viewerWrap" class="viewerWrap hidden">
+        <div id="pageLayer" class="pageLayer">
+          <canvas id="pdfCanvas"></canvas>
+          <div id="textLayer" class="textLayer"></div>
+          <div id="highlightLayer" class="highlightLayer"></div>
+        </div>
+      </div>
+
+      <footer class="bottombar">
+        <span id="status" class="muted">Sin PDF cargado</span>
+        <span class="hint muted">Tip: selecciona texto para resaltar • ←/→ cambia página • +/− zoom</span>
+      </footer>
+    </section>
+  </main>
+
+  <!-- App -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
